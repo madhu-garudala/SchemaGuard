@@ -66,7 +66,12 @@ export function usePoll<T>(url: string | null, nextDelay: (data: T | null) => nu
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
+    let again = false;
     let latest: T | null = null;
+    // A different URL is a different resource: do not show the previous one while it loads.
+    setData(null);
+    setError(null);
+    setLoading(true);
 
     const schedule = () => {
       if (cancelled) return;
@@ -77,7 +82,11 @@ export function usePoll<T>(url: string | null, nextDelay: (data: T | null) => nu
     };
 
     const tick = async () => {
-      if (cancelled || inFlight) return;
+      if (cancelled) return;
+      if (inFlight) {
+        again = true; // a refresh asked for during a request runs right after it
+        return;
+      }
       if (document.hidden) return; // resumed by visibilitychange
       inFlight = true;
       try {
@@ -93,7 +102,10 @@ export function usePoll<T>(url: string | null, nextDelay: (data: T | null) => nu
         inFlight = false;
         if (!cancelled) {
           setLoading(false);
-          schedule();
+          if (again) {
+            again = false;
+            void tick();
+          } else schedule();
         }
       }
     };
@@ -134,7 +146,7 @@ export function useWorker(): WorkerSnapshot {
     const check = async () => {
       if (document.hidden || Date.now() - workerState.at < 12_000) return;
       try {
-        const o = await api<{ worker: WorkerView }>("/api/overview");
+        const o = await api<{ worker: WorkerView }>("/api/health");
         publishWorker(o.worker);
       } catch {
         publishWorker(null, true);

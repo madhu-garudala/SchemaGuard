@@ -78,6 +78,13 @@ function repair(packet: any, opts: { faults: string[] }) {
   if (removed.length) return none("no_safe_repair", [], `Downstream models require ${removed.map((c) => (c.kind === "field_removed" ? c.field : "")).join(", ")}; no mapping change can recreate it.`);
   if (changes.some((c) => c.kind === "nullability_tightened")) return none("no_safe_repair", [], "Existing rows violate the proposed non-null constraint; the producer must backfill before the change ships.");
 
+  // Test-only variants of a repair a live model could plausibly return.
+  const rename = renamed.find((c) => c.kind === "field_renamed" && targetOf(c.from));
+  if (rename?.kind === "field_renamed" && opts.faults.includes("generic_repair"))
+    return { decision: "propose", operations: [{ op: "update_field_mapping", source: src, target: targetOf(rename.from)!, from: rename.to, as: "minor_units" }], assumptions: [], expected_invariants: [], missing_facts: [], question_for_owner: null };
+  if (rename?.kind === "field_renamed" && opts.faults.includes("hallucinated_repair"))
+    return { decision: "propose", operations: [{ op: "update_field_mapping", source: src, target: targetOf(rename.from)!, from: "amount_minor", as: "minor_units" }], assumptions: [], expected_invariants: [], missing_facts: [], question_for_owner: null };
+
   for (const c of renamed) if (c.kind === "field_renamed" && targetOf(c.from)) ops.push({ op: "rename_field", source: src, target: targetOf(c.from)!, from: c.from, to: c.to });
   if (!opts.faults.includes("bad_repair"))
     for (const c of changes) if (c.kind === "unit_changed" && c.to === "cents" && targetOf(c.previous_field)) ops.push({ op: "convert_minor_units", source: src, target: targetOf(c.previous_field)!, unit: "cents" });

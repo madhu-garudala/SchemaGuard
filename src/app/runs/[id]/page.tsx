@@ -52,7 +52,7 @@ export default function RunPage() {
         <RunModeTags run={run} />
         <span className="muted">agents requested: {run.agent_mode}</span>
         <span className="muted">
-          {d.env.kind === "main" ? "Main demo environment" : `Sandbox ${d.env.label}`} ·{" "}
+          {d.env.kind === "main" ? "Main demo environment" : d.env.label} ·{" "}
           <Status tone={HEALTH_TONE[d.env.health]}>current data {HEALTH_LABEL[d.env.health].toLowerCase()}</Status>
         </span>
         <span className="muted">

@@ -33,8 +33,18 @@ export async function git(args: string[], cwd = repoDir()): Promise<string> {
   return r.stdout.trim();
 }
 
+/** Worktree bookkeeping in one repository must not interleave; runs in this process take turns. */
+let worktreeQueue: Promise<unknown> = Promise.resolve();
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const next = worktreeQueue.then(fn, fn);
+  worktreeQueue = next.catch(() => {});
+  return next;
+}
+
 /** Create the fixture repository from the checked-in template if needed. Returns the baseline commit. */
-export async function ensureFixtureRepo(): Promise<string> {
+export const ensureFixtureRepo = (): Promise<string> => serial(createFixtureRepo);
+
+async function createFixtureRepo(): Promise<string> {
   const dir = repoDir();
   if (!fs.existsSync(path.join(dir, ".git"))) {
     fs.mkdirSync(dir, { recursive: true });
@@ -51,12 +61,16 @@ export async function ensureFixtureRepo(): Promise<string> {
 export async function revisionDir(sha: string): Promise<string> {
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`not a commit sha: ${sha}`);
   const dir = path.join(cfg().runtimeDir, "revisions", sha);
-  if (!fs.existsSync(path.join(dir, "run.mjs"))) {
+  if (fs.existsSync(path.join(dir, "run.mjs"))) return dir;
+  // Concurrent callers for the same commit share one checkout; a half-made directory is replaced.
+  return serial(async () => {
+    if (fs.existsSync(path.join(dir, "run.mjs"))) return dir;
+    fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(dir), { recursive: true });
     await git(["worktree", "prune"]);
     await git(["worktree", "add", "--detach", "-f", dir, sha]);
-  }
-  return dir;
+    return dir;
+  });
 }
 
 export function readMappings(dir: string): Record<SourceId, Mapping> {
@@ -84,21 +98,25 @@ export interface RepairWorktree {
   base_rev: string;
 }
 
-export async function createRepairWorktree(key: string, baseRev: string): Promise<RepairWorktree> {
+export function createRepairWorktree(key: string, baseRev: string): Promise<RepairWorktree> {
   const safe = key.replace(/[^a-zA-Z0-9_-]/g, "-");
   const dir = path.join(cfg().runtimeDir, "worktrees", safe);
   const branch = `repair/${safe}`;
-  await removeWorktree(dir);
-  await git(["branch", "-D", branch]).catch(() => {});
-  fs.mkdirSync(path.dirname(dir), { recursive: true });
-  await git(["worktree", "add", "-q", "-b", branch, dir, baseRev]);
-  return { dir, branch, base_rev: baseRev };
+  return serial(async () => {
+    await dropWorktree(dir);
+    await git(["branch", "-D", branch]).catch(() => {});
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    await git(["worktree", "add", "-q", "-b", branch, dir, baseRev]);
+    return { dir, branch, base_rev: baseRev };
+  });
 }
 
-export async function removeWorktree(dir: string): Promise<void> {
+async function dropWorktree(dir: string): Promise<void> {
   if (fs.existsSync(dir)) await git(["worktree", "remove", "--force", dir]).catch(() => fs.rmSync(dir, { recursive: true, force: true }));
   await git(["worktree", "prune"]).catch(() => {});
 }
+
+export const removeWorktree = (dir: string): Promise<void> => serial(() => dropWorktree(dir));
 
 /**
  * Apply typed operations inside a repair worktree, commit, and return the candidate revision and diff.

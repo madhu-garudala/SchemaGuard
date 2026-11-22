@@ -107,7 +107,7 @@ export function Checks({ checks, firstFailed }: { checks: CheckResult[]; firstFa
   );
 }
 
-function FindingBlock({ f }: { f: FindingView }) {
+function FindingBlock({ f, linkEvidence = true }: { f: FindingView; linkEvidence?: boolean }) {
   return (
     <div className="block">
       <h4 className="h-sub">
@@ -125,7 +125,7 @@ function FindingBlock({ f }: { f: FindingView }) {
           {f.observed_facts.map((o, i) => (
             <li key={i}>
               {o.statement}
-              <EvidenceIds ids={o.evidence_ids} />
+              <EvidenceIds ids={o.evidence_ids} link={linkEvidence} />
             </li>
           ))}
         </ul>
@@ -208,7 +208,9 @@ function RepairBlock({ r }: { r: RepairView }) {
           <p className="small muted">
             {r.gate.passed
               ? "Every unit, key and meaning the repair relies on is declared by the producer."
-              : "Activation is blocked. Matching samples cannot establish a contract the producer has not declared."}
+              : r.gate.required.some((g) => !g.present && g.kind !== "contradicted")
+                ? "Activation is blocked. Matching samples cannot establish a contract the producer has not declared."
+                : "Activation is blocked. The repair conflicts with what the producer declared."}
           </p>
           <ol className="checks">
             {r.gate.required.map((g, i) => (
@@ -218,9 +220,9 @@ function RepairBlock({ r }: { r: RepairView }) {
                 </span>
                 <div>
                   <div className="check-label">
-                    <span className="sr-only">{g.present ? "Declared: " : "Missing: "}</span>
+                    <span className="sr-only">{g.present ? "Declared: " : g.kind === "contradicted" ? "Conflicts: " : "Missing: "}</span>
                     {g.assertion}
-                    {!g.present && <span className="t-bad"> — not declared</span>}
+                    {!g.present && <span className="t-bad"> — {g.kind === "contradicted" ? "conflicts with the proposed contract" : "not declared"}</span>}
                   </div>
                   <div className="check-detail">{g.detail}</div>
                 </div>
@@ -290,7 +292,8 @@ function RepairBlock({ r }: { r: RepairView }) {
 }
 
 /** The in-app alert. One incident row is updated in place as diagnosis and repair progress. */
-export function Incident({ incident: i, depth = "full" }: { incident: IncidentView; depth?: "summary" | "full" }) {
+/** linkEvidence: set false on pages that have no evidence list for the anchors to point at. */
+export function Incident({ incident: i, depth = "full", linkEvidence = true }: { incident: IncidentView; depth?: "summary" | "full"; linkEvidence?: boolean }) {
   const tone = incidentTone(i);
   const future = i.risk_kind === "future_change";
   return (
@@ -340,13 +343,13 @@ export function Incident({ incident: i, depth = "full" }: { incident: IncidentVi
           <>
             <dt>Evidence</dt>
             <dd>
-              <EvidenceIds ids={i.evidence_ids} link={depth === "full"} />
+              <EvidenceIds ids={i.evidence_ids} link={depth === "full" && linkEvidence} />
             </dd>
           </>
         )}
       </dl>
 
-      {depth === "full" && i.finding && <FindingBlock f={i.finding} />}
+      {depth === "full" && i.finding && <FindingBlock f={i.finding} linkEvidence={linkEvidence} />}
       {depth === "full" && i.repair && <RepairBlock r={i.repair} />}
 
       {i.history.length > 0 && (

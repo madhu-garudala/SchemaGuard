@@ -334,7 +334,7 @@ export interface GeneratedPlan {
 export interface ScenariosView {
   catalog: CatalogCase[];
   generated: GeneratedPlan[];
-  generation: { job_id: string; status: "queued" | "running" | "done" | "failed"; batch_id: string; seed: number; created_at: string } | null;
+  generation: { job_id: string; status: "queued" | "running" | "done" | "failed"; batch_id: string; seed: number; created_at: string; error: string | null } | null;
   worker: WorkerView;
 }
 

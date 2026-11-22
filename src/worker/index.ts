@@ -42,7 +42,7 @@ async function handle(job: Job): Promise<void> {
     const permanent = Boolean(e.permanent) || /unknown run|references a plan|is invalid/i.test(message);
     const state = await fail(job, message, !permanent);
     log(`job ${job.id} ${job.type} failed (${state}): ${message}`);
-    if (state === "failed" && job.type === "run.execute") await q("UPDATE runs SET status='failed', error=$2, finished_at=now() WHERE id=$1", [job.payload.run_id, message.slice(0, 600)]);
+    if (state === "failed" && job.type === "run.execute") await q("UPDATE runs SET status='failed', error=$2, finished_at=now() WHERE id=$1 AND status NOT IN ('completed','failed')", [job.payload.run_id, message.slice(0, 600)]);
   } finally {
     clearInterval(keepAlive);
   }
@@ -59,7 +59,7 @@ async function loop(): Promise<void> {
         lastBeat = Date.now();
         for (const j of await requeueExpired()) {
           log(`job ${j.id} lease expired; ${j.status === "failed" ? "attempts exhausted" : "re-queued"}`);
-          if (j.status === "failed" && j.type === "run.execute") await q("UPDATE runs SET status='failed', error='The worker stopped while this run was in progress and retries were exhausted.', finished_at=now() WHERE id=$1", [j.payload.run_id]);
+          if (j.status === "failed" && j.type === "run.execute") await q("UPDATE runs SET status='failed', error='The worker stopped while this run was in progress and retries were exhausted.', finished_at=now() WHERE id=$1 AND status NOT IN ('completed','failed')", [j.payload.run_id]);
         }
       }
       if (active < Math.max(1, c.runConcurrency)) {
@@ -77,7 +77,11 @@ async function loop(): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 400));
   }
-  while (active > 0) await new Promise((r) => setTimeout(r, 200));
+  // Keep reporting in while the last job drains, so the dashboard does not show the worker as offline.
+  while (active > 0) {
+    await beat("worker", { worker_id: WORKER_ID, agent_mode: c.agentMode, model_ref: c.modelRef, openclaw_version: version, active }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 1000));
+  }
   await closePool();
 }
 

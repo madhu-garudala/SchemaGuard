@@ -168,6 +168,7 @@ export default function ScenariosPage() {
                   <span className="muted">
                     {" "}
                     · batch <code>{gen.batch_id}</code> · seed <code>{gen.seed}</code> · <Time iso={gen.created_at} mode="time" />
+                    {gen.error ? ` · ${gen.error}` : ""}
                   </span>
                 </>
               ) : (

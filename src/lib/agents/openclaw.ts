@@ -36,10 +36,16 @@ function providerErrorsFor(sessionKey: string, fromOffset: number): { count: num
   try {
     const file = gatewayLogPath();
     const size = fs.statSync(file).size;
+    // A smaller file means the log was truncated or rotated since the turn started: read it from the top.
+    const from = size < fromOffset ? 0 : fromOffset;
+    if (size <= from) return { count: 0, category: null, detail: "" };
+    const buf = Buffer.alloc(Math.min(size - from, 512 * 1024));
     const fd = fs.openSync(file, "r");
-    const buf = Buffer.alloc(Math.min(size - fromOffset, 512 * 1024));
-    fs.readSync(fd, buf, 0, buf.length, Math.max(fromOffset, size - buf.length));
-    fs.closeSync(fd);
+    try {
+      fs.readSync(fd, buf, 0, buf.length, Math.max(from, size - buf.length));
+    } finally {
+      fs.closeSync(fd);
+    }
     const lines = buf.toString("utf8").replace(/\x1b\[[0-9;]*m/g, "").split("\n").filter((l) => l.includes(sessionKey) && l.includes("[provider-error]"));
     if (!lines.length) return { count: 0, category: null, detail: "" };
     const last = lines[lines.length - 1];
@@ -111,7 +117,7 @@ export async function liveTurn(opts: { agentId: string; sessionKey: string; prom
     if (provider !== wantProvider || model !== wantModel)
       throw new AgentError("provenance_mismatch", `run used ${provider}/${model}, expected ${c.modelRef}`, r.elapsedMs, provider, model);
     const u = agentMeta.usage ?? {};
-    return { text, provider, model, usage: { input: u.input, output: u.output, total: u.total }, elapsedMs: meta.durationMs ?? r.elapsedMs, sessionKey: opts.sessionKey };
+    return { text, provider, model, usage: { input: u.input, output: u.output, total: u.total }, elapsedMs: Math.round(Number(meta.durationMs) || r.elapsedMs), sessionKey: opts.sessionKey };
   } finally {
     clearInterval(watcher);
     fs.rmSync(file, { force: true });

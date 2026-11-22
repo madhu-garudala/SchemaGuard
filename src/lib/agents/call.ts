@@ -66,7 +66,11 @@ export async function callAgent<T>(ctx: AgentCtx, req: { role: RoleKey; purpose:
   let last: { category: ErrorCategory; message: string } = { category: "unavailable", message: "no attempt made" };
   const base = { run_id: ctx.runId, batch_id: ctx.batchId ?? null, role: ROLE_LABEL[req.role], agent_id: agentId, purpose: req.purpose };
 
-  for (let attempt = 1; attempt <= c.agentMaxAttempts + 1; attempt++) {
+  // Two separate budgets: provider failures (live calls that did not return) and replies that failed
+  // validation. Falling back to fixture output in auto mode uses neither, so the correction turn survives.
+  let providerFailures = 0;
+  let invalidReplies = 0;
+  for (let attempt = 1; attempt <= c.agentMaxAttempts * 2 + 1; attempt++) {
     const prompt = promptFor(req.role, req.packet, correction);
     const sessionKey = `sg-${(ctx.runId ?? ctx.batchId ?? "adhoc").toLowerCase()}-${req.purpose.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-a${attempt}`;
     const started = Date.now();
@@ -101,8 +105,11 @@ export async function callAgent<T>(ctx: AgentCtx, req: { role: RoleKey; purpose:
           continue;
         }
         if (e.category === "unauthorized" || e.category === "provenance_mismatch") break;
+        if (++providerFailures >= c.agentMaxAttempts) break;
         await new Promise((r) => setTimeout(r, 1500));
+        continue;
       }
+      if (++providerFailures >= c.agentMaxAttempts) break;
       continue;
     }
     const parsed = req.parse(text);
@@ -110,7 +117,7 @@ export async function callAgent<T>(ctx: AgentCtx, req: { role: RoleKey; purpose:
     if (parsed.ok) return { ok: true, value: parsed.value, mode, provider, model, elapsedMs: elapsed };
     last = { category: parsed.category, message: parsed.errors.join("; ") };
     correction = parsed.errors;
-    if (attempt >= c.agentMaxAttempts) break;
+    if (++invalidReplies >= c.agentMaxAttempts) break;
   }
   return { ok: false, ...last };
 }

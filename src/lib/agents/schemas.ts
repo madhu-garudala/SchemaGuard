@@ -30,6 +30,15 @@ export type Parsed<T> = { ok: true; value: T } | { ok: false; category: "malform
 
 /** Pull the single JSON object out of a model reply (tolerates code fences and surrounding prose). */
 export function extractJson(text: string): unknown {
+  // A fenced block is the reply proper; prose around it may contain braces of its own.
+  const fenced = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/i.exec(text);
+  if (fenced) {
+    try {
+      return JSON.parse(fenced[1]);
+    } catch {
+      // fall through to the looser extraction
+    }
+  }
   const cleaned = text.replace(/```(?:json)?/gi, "").trim();
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");

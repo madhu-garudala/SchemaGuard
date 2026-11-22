@@ -190,7 +190,7 @@ export default function OverviewPage() {
       <div className="cta">
         <div className="actions">
           <button type="button" className="btn btn-primary" onClick={() => start(null)} disabled={starting || active}>
-            {active ? "Rehearsal running…" : "Run schema-change rehearsal"}
+            {!active ? "Run schema-change rehearsal" : story?.run.status === "queued" || story?.run.status === "running" ? "Rehearsal running…" : "Another run in progress…"}
           </button>
           <button type="button" className="btn btn-quiet" onClick={() => start("bad_repair")} disabled={starting || active}>
             Replay with a deliberately wrong repair
@@ -244,7 +244,7 @@ export default function OverviewPage() {
 
           <Section title="Alerts" aside={o.alerts.length ? `${o.alerts.filter(isOpenIncident).length} open of ${o.alerts.length}` : undefined}>
             {o.alerts.length ? (
-              o.alerts.map((a) => <Incident key={a.id} incident={a} depth={story && a.run_id === story.run.id ? "full" : "summary"} />)
+              o.alerts.map((a) => <Incident key={a.id} incident={a} depth={story && a.run_id === story.run.id ? "full" : "summary"} linkEvidence={false} />)
             ) : (
               <p className="empty">No alerts. An alert opens when a proposed change or an arriving batch puts a dashboard at risk.</p>
             )}

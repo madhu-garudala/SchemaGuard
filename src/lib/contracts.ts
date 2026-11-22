@@ -2,6 +2,7 @@ import { lineage } from "./fixtures";
 import type { CauseCategory, Contract, ContractField, Row, SourceId } from "./types";
 
 export type ContractChange =
+  /** nullable here means optional for existing consumers: nullable and not required. */
   | { kind: "field_added"; field: string; type: string; nullable: boolean; unit: string | null }
   | { kind: "field_removed"; field: string; was_key: boolean }
   | { kind: "field_renamed"; from: string; to: string; declared: true }
@@ -28,12 +29,14 @@ export function diffContracts(current: Contract, candidate: Contract): ContractC
     if ((before.unit ?? null) !== (after.unit ?? null)) changes.push({ kind: "unit_changed", field: after.name, from: before.unit, to: after.unit, previous_field: before.name });
     if (before.nullable && !after.nullable) changes.push({ kind: "nullability_tightened", field: after.name });
     if (!before.nullable && after.nullable) changes.push({ kind: "nullability_loosened", field: after.name });
+    // A field that becomes mandatory is the same kind of tightening as one that stops accepting nulls.
+    if (!before.required && after.required && !(before.nullable && !after.nullable)) changes.push({ kind: "nullability_tightened", field: after.name });
   };
 
   for (const [to, from] of Object.entries(renames)) {
     const before = cur.get(from);
     const after = cand.get(to);
-    if (!before || !after || cand.has(from)) continue;
+    if (!before || !after || cand.has(from) || renamedFrom.has(from)) continue;
     renamedFrom.add(from);
     changes.push({ kind: "field_renamed", from, to, declared: true });
     compare(before, after);
@@ -41,7 +44,7 @@ export function diffContracts(current: Contract, candidate: Contract): ContractC
   for (const [name, f] of cand) {
     if (renames[name] && renamedFrom.has(renames[name])) continue;
     const before = cur.get(name);
-    if (!before) changes.push({ kind: "field_added", field: name, type: f.type, nullable: f.nullable, unit: f.unit });
+    if (!before) changes.push({ kind: "field_added", field: name, type: f.type, nullable: f.nullable && !f.required, unit: f.unit });
     else compare(before, f);
   }
   for (const name of cur.keys()) {
@@ -98,15 +101,15 @@ export function classifyChanges(current: Contract, candidate: Contract, changes:
     const u = has("unit_changed")!;
     category = "unit_and_name_change";
     summary = `${r.from} is renamed to ${r.to} and its unit changes from ${u.from} to ${u.to}.`;
-  } else if (changes.some((c) => c.kind === "field_removed" && c.field === (current.currency_policy.field ?? "currency"))) {
+  } else if (current.currency_policy.mode !== "none" && changes.some((c) => c.kind === "field_removed" && c.field === (current.currency_policy.field ?? "currency"))) {
     category = "currency_removed";
     summary = "The currency field is removed.";
   } else if (changes.some((c) => c.kind === "field_removed" && c.was_key)) {
     category = "required_key_removed";
     const removed = changes.find((c): c is Extract<ContractChange, { kind: "field_removed" }> => c.kind === "field_removed" && c.was_key)!;
     summary = `Key field ${removed.field} is removed.`;
-  } else if (has("semantic_changed")?.key === "refund_convention") {
-    const s = has("semantic_changed")!;
+  } else if (changes.some((c) => c.kind === "semantic_changed" && c.key === "refund_convention")) {
+    const s = changes.find((c): c is Extract<ContractChange, { kind: "semantic_changed" }> => c.kind === "semantic_changed" && c.key === "refund_convention")!;
     category = "refund_convention_change";
     summary = `Refund convention changes from ${s.from} to ${s.to}.`;
     affected.add("payment_amount");

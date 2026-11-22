@@ -150,7 +150,12 @@ export function validatePlan(raw: unknown, origin: "catalog" | "agent", expected
       const started = mine.find((e) => e.type === "source.export.started");
       const c = baselineContract(src);
       if (started && started.offset_min <= c.delivery.expected_start_min + c.delivery.grace_min) reasons.push(`${src}: delay_export needs the export to start after minute ${c.delivery.expected_start_min + c.delivery.grace_min}, or not at all`);
+      // A batch that lands before the warning time is not a delay: no warning would ever be raised.
+      const arrived = exportEvents.find((e) => e.type === "source.batch.arrived");
+      if (arrived && arrived.offset_min <= c.delivery.expected_start_min + c.delivery.grace_min) reasons.push(`${src}: delay_export needs the cycle batch to arrive after minute ${c.delivery.expected_start_min + c.delivery.grace_min}, or not at all`);
     }
+    // The runner schedules one of each cycle event; a second one would be dropped silently.
+    for (const t of order) if (exportEvents.filter((e) => e.type === t).length > 1) reasons.push(`${src}: more than one ${t} event for the cycle batch`);
     if (mode !== "delivery") {
       // Only delay_export may script a late or missing delivery; otherwise the expected outcome would ignore it.
       const d = baselineContract(src).delivery;
@@ -161,6 +166,15 @@ export function validatePlan(raw: unknown, origin: "catalog" | "agent", expected
     }
     const extras = mine.filter((e) => e.type === "source.batch.arrived" && e.payload.batch && e.payload.batch !== "cycle");
     if (extras.length && mode !== "extra_batch") reasons.push(`${src}: redelivery/stale batch events need a redeliver_batch or stale_batch mutation`);
+    if (mode === "extra_batch") {
+      const want = m!.type === "redeliver_batch" ? "redelivery" : "stale";
+      const cycleAt = exportEvents.find((e) => e.type === "source.batch.arrived")?.offset_min ?? DEFAULT_TIMING[src].arrived;
+      if (extras.length > 1) reasons.push(`${src}: at most one extra batch event`);
+      for (const x of extras) {
+        if (x.payload.batch !== want) reasons.push(`${src}: a ${m!.type} plan needs payload.batch "${want}" (found "${String(x.payload.batch)}")`);
+        if (x.offset_min <= cycleAt) reasons.push(`${src}: the extra batch must arrive after the cycle batch (minute ${cycleAt})`);
+      }
+    }
   }
   if (reasons.length) return { ok: false, reasons };
 

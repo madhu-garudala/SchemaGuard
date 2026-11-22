@@ -183,6 +183,8 @@ class Run {
       this.stepStarted = Date.now();
       await item.fn();
     }
+    // The last writes (run status, health, score) belong to whoever still holds the lease.
+    await this.hooks.checkpoint?.();
     await this.finish();
   }
 
@@ -402,42 +404,45 @@ class Run {
     repair.branch = wt.branch;
     let repaired: ReturnType<typeof applyOperations>;
     try {
-      repaired = applyOperations(mappings, p.operations, { [src]: candidate.version });
-      const applied = await applyRepair(wt, p.operations, { candidateVersion: { [src]: candidate.version }, paymentsSample: src === "payments" ? state.effect.rows!.slice(0, 8) : undefined, message: `Repair ${src} mapping for contract v${candidate.version}\n\n${p.operations.map((o) => `- ${describeOp(o)}`).join("\n")}` });
-      repair.candidate_rev = applied.candidate_rev;
-      repair.diff = applied.diff;
-    } catch (err) {
+      try {
+        repaired = applyOperations(mappings, p.operations, { [src]: candidate.version });
+        const applied = await applyRepair(wt, p.operations, { candidateVersion: { [src]: candidate.version }, paymentsSample: src === "payments" ? state.effect.rows!.slice(0, 8) : undefined, message: `Repair ${src} mapping for contract v${candidate.version}\n\n${p.operations.map((o) => `- ${describeOp(o)}`).join("\n")}` });
+        repair.candidate_rev = applied.candidate_rev;
+        repair.diff = applied.diff;
+      } catch (err) {
+        this.toolMs += Date.now() - t0;
+        repair.status = "failed";
+        await this.timeline({ actor: "Repair worker", kind: "repair", title: "Repair could not be applied", detail: (err as Error).message, incident_id: incidentId, tone: "bad" });
+        return block(cls.category === "ambiguous_contract" ? "pending_clarification" : "blocked", cls.category === "ambiguous_contract" ? "block_pending_clarification" : "hold_previous_snapshot", "Repair proposal was not applicable to the mapping. Needs a revised proposal or owner input.", "Change held: repair not applicable", (err as Error).message);
+      }
+      await this.timeline({ actor: "Repair worker", kind: "repair", title: `Applied on branch ${wt.branch} (${wt.base_rev.slice(0, 7)} → ${repair.candidate_rev!.slice(0, 7)})`, detail: "Isolated Git worktree of the fixture pipeline repository. Only mapping files and the payments sample may change.", incident_id: incidentId, tone: "neutral", data: { diff: repair.diff } });
+
+      repair.gate = assertionGate(p.operations, repaired, { [src]: candidate }, mappings);
+      await this.timeline({ actor: "Release gate", kind: "gate", title: repair.gate.passed ? "Contract assertions present for every operation" : repair.gate.required.some((r) => !r.present && r.kind !== "contradicted") ? "Missing contract assertions" : "Repair contradicts the declared contract", detail: repair.gate.required.map((r) => `${r.present ? "✓" : "✗"} ${r.assertion} — ${r.detail}`).join("\n"), incident_id: incidentId, tone: repair.gate.passed ? "good" : "bad" });
+
+      repair.repo_tests = await runRepoTests(wt.dir);
       this.toolMs += Date.now() - t0;
-      repair.status = "failed";
-      await removeWorktree(wt.dir);
-      await this.timeline({ actor: "Repair worker", kind: "repair", title: "Repair could not be applied", detail: (err as Error).message, incident_id: incidentId, tone: "bad" });
-      return block(cls.category === "ambiguous_contract" ? "pending_clarification" : "blocked", cls.category === "ambiguous_contract" ? "block_pending_clarification" : "hold_previous_snapshot", "Repair proposal was not applicable to the mapping. Needs a revised proposal or owner input.", "Change held: repair not applicable", (err as Error).message);
+      await this.timeline({ actor: "Repair worker", kind: "repair", title: `Pipeline repository tests: ${repair.repo_tests.total - repair.repo_tests.failed}/${repair.repo_tests.total} pass`, detail: repair.repo_tests.passed ? null : repair.repo_tests.output_excerpt, incident_id: incidentId, tone: repair.repo_tests.passed ? "good" : "bad" });
+
+      // Replay the same logical records: baseline rows on the baseline revision vs candidate rows on the repaired revision.
+      const t1 = Date.now();
+      // Negative control, derived from the mappings themselves so it does not depend on which operation
+      // the agent chose: the repaired mapping with every dropped x100 conversion put back.
+      const staleFields = Object.entries(repaired[src].fields).filter(([t, f]) => f.as === "minor_units" && mappings[src].fields[t]?.as === "dollars_to_cents");
+      const controlMapping = staleFields.length ? { ...repaired[src], fields: { ...repaired[src].fields, ...Object.fromEntries(staleFields.map(([t, f]) => [t, { ...f, as: "dollars_to_cents" }])) } } : null;
+      const [b, c, control] = await Promise.all([
+        runPipelineRev(baseRev, this.currentInput()),
+        runPipelineAt(wt.dir, candidateInput),
+        controlMapping ? runPipelineAt(wt.dir, candidateInput, { [src]: controlMapping }) : Promise.resolve(null),
+      ]);
+      repair.replay = reconcile(b, c, { control, controlLabel: "A mapping that keeps the old ×100 conversion", repoTests: repair.repo_tests });
+      this.replayMs += Date.now() - t1;
+      await this.timeline({ actor: "Replay", kind: "replay", title: repair.replay.passed ? `Replay passed: ${repair.replay.checks.length} checks on the same logical records` : `Replay failed at "${label(repair.replay)}"`, detail: repair.replay.checks.map((x) => `${x.passed ? "✓" : "✗"} ${x.label}: ${x.detail}`).join("\n"), incident_id: incidentId, tone: repair.replay.passed ? "good" : "bad", data: { checks: repair.replay.checks } });
+    } finally {
+      await removeWorktree(wt.dir).catch(() => {});
     }
-    await this.timeline({ actor: "Repair worker", kind: "repair", title: `Applied on branch ${wt.branch} (${wt.base_rev.slice(0, 7)} → ${repair.candidate_rev!.slice(0, 7)})`, detail: "Isolated Git worktree of the fixture pipeline repository. Only mapping files and the payments sample may change.", incident_id: incidentId, tone: "neutral", data: { diff: repair.diff } });
 
-    repair.gate = assertionGate(p.operations, repaired, { [src]: candidate }, mappings);
-    await this.timeline({ actor: "Release gate", kind: "gate", title: repair.gate.passed ? "Contract assertions present for every operation" : repair.gate.required.some((r) => !r.present && r.kind !== "contradicted") ? "Missing contract assertions" : "Repair contradicts the declared contract", detail: repair.gate.required.map((r) => `${r.present ? "✓" : "✗"} ${r.assertion} — ${r.detail}`).join("\n"), incident_id: incidentId, tone: repair.gate.passed ? "good" : "bad" });
-
-    repair.repo_tests = await runRepoTests(wt.dir);
-    this.toolMs += Date.now() - t0;
-    await this.timeline({ actor: "Repair worker", kind: "repair", title: `Pipeline repository tests: ${repair.repo_tests.total - repair.repo_tests.failed}/${repair.repo_tests.total} pass`, detail: repair.repo_tests.passed ? null : repair.repo_tests.output_excerpt, incident_id: incidentId, tone: repair.repo_tests.passed ? "good" : "bad" });
-
-    // Replay the same logical records: baseline rows on the baseline revision vs candidate rows on the repaired revision.
-    const t1 = Date.now();
-    const converts = p.operations.filter((o) => o.op === "convert_minor_units");
-    const unitChange = changes.some((c) => c.kind === "unit_changed");
-    const controlOps = p.operations.filter((o) => o.op !== "convert_minor_units");
-    const [b, c, control] = await Promise.all([
-      runPipelineRev(baseRev, this.currentInput()),
-      runPipelineAt(wt.dir, candidateInput),
-      unitChange && converts.length && controlOps.length ? runPipelineAt(wt.dir, candidateInput, { [src]: applyOperations(mappings, controlOps, { [src]: candidate.version })[src] }) : Promise.resolve(null),
-    ]);
-    repair.replay = reconcile(b, c, { control, controlLabel: "A mapping that keeps the old ×100 conversion", repoTests: repair.repo_tests });
-    this.replayMs += Date.now() - t1;
-    await removeWorktree(wt.dir);
-    await this.timeline({ actor: "Replay", kind: "replay", title: repair.replay.passed ? `Replay passed: ${repair.replay.checks.length} checks on the same logical records` : `Replay failed at "${label(repair.replay)}"`, detail: repair.replay.checks.map((x) => `${x.passed ? "✓" : "✗"} ${x.label}: ${x.detail}`).join("\n"), incident_id: incidentId, tone: repair.replay.passed ? "good" : "bad", data: { checks: repair.replay.checks } });
-
-    const undeclared = repair.gate.required.filter((r) => !r.present && r.kind !== "contradicted");
+    const undeclared = repair.gate!.required.filter((r) => !r.present && r.kind !== "contradicted");
     if (undeclared.length) {
       repair.status = "blocked";
       return block("pending_clarification", "block_pending_clarification", `${current.owner.name} (${current.owner.contact}) must declare: ${undeclared.map((r) => r.assertion).join("; ")}`, "Blocked pending clarification", `${repair.replay.passed ? "The sample replay reconciles, but that" : "The replay fails and it also"} rests on facts the producer has not declared. Missing assertions block activation regardless of sample results.`);
@@ -468,6 +473,8 @@ class Run {
       state.status = "blocked";
       state.signal.outcome = "hold_previous_snapshot";
       this.gateClosed = true;
+      await q("UPDATE contracts SET status='rejected' WHERE env_id=$1 AND source=$2 AND version=$3", [this.envId, src, state.candidate.version]);
+      if (state.incident_id) await this.updateIncident(state.incident_id, { status: "blocked", has_verified_fix: false, next_action: `Rehearse the ${src} repair again: the active mapping changed after it was verified.` }, "Activation refused: mapping moved since the rehearsal");
       await this.timeline({ actor: "Release gate", kind: "gate", title: "Activation refused: mapping moved since the rehearsal", detail: `Tested ${state.candidate_rev.slice(0, 7)} is not based on the active ${env.active_mapping_rev.slice(0, 7)}; the repair must be rehearsed again.`, incident_id: state.incident_id, tone: "bad" });
       return;
     }

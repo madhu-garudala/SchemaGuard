@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentError, classifyProviderText, liveTurn } from "../src/lib/agents/openclaw";
-import { parseFinding, parseRepair } from "../src/lib/agents/schemas";
+import { callAgent, resetBreaker } from "../src/lib/agents/call";
+import { extractJson, parseFinding, parseRepair } from "../src/lib/agents/schemas";
 import { CATALOG } from "../src/lib/catalog";
+import { authorPacket } from "../src/lib/generate";
 import { redact } from "../src/lib/config";
 import { classifyChanges, diffContracts, traceImpact, validateBatch } from "../src/lib/contracts";
 import { closePool } from "../src/lib/db";
@@ -60,6 +62,17 @@ describe("contract comparison", () => {
     expect(validateBatch(orders, baselineData("baseline_usd").orders.slice(0, 3)).problems[0].check).toBe("volume_out_of_range");
     expect(validateBatch({ ...orders, fields: orders.fields.map((f) => ({ ...f, nullable: false })) }, baselineData("baseline_usd").orders).problems[0].check).toBe("null_not_allowed");
   });
+
+  it("treats a newly required field as breaking, and ignores a second rename onto the same field", () => {
+    const optional = current.fields.find((f) => !f.required) ?? current.fields[current.fields.length - 1];
+    const added = { ...current, version: 2, fields: [...current.fields, { name: "memo", type: "string" as const, required: true, nullable: true, semantic: "note", unit: null }] };
+    expect(classifyChanges(current, added, diffContracts(current, added), rows).risk).not.toBe("safe_additive");
+    const loosened = { ...current, fields: current.fields.map((f) => (f.name === optional.name ? { ...f, required: false } : f)) };
+    const tightened = { ...loosened, version: 2, fields: loosened.fields.map((f) => (f.name === optional.name ? { ...f, required: true } : f)) };
+    expect(diffContracts(loosened, tightened)).toEqual([{ kind: "nullability_tightened", field: optional.name }]);
+    const twice = { ...current, version: 2, fields: [...current.fields.filter((f) => f.name !== "payment_amount"), { ...current.fields.find((f) => f.name === "payment_amount")!, name: "a" }, { ...current.fields.find((f) => f.name === "payment_amount")!, name: "b" }], assertions: { renames: { a: "payment_amount", b: "payment_amount" } } };
+    expect(diffContracts(current, twice as any).filter((c) => c.kind === "field_renamed")).toHaveLength(1);
+  });
 });
 
 describe("repair operations and the assertion gate", () => {
@@ -108,6 +121,36 @@ describe("repair operations and the assertion gate", () => {
     expect(okGate.required.filter((r) => /rename/.test(r.assertion))).toHaveLength(1);
   });
 
+  it("separates what the producer left out from what the repair got wrong", () => {
+    const data = baselineData("baseline_usd");
+    const cand = buildEffect({ type: "rename_amount_to_minor_units", new_name: "amount_cents", declare_unit: true, declare_rename: true }, baselineContract("payments"), data.payments).candidateContract!;
+    const base = readMappings(dir);
+    const failing = (ops: RepairOperation[], candidates = { payments: cand }) => assertionGate(ops, applyOperations(base, ops, { payments: 2 }), candidates, base).required.filter((r) => !r.present);
+    // A field name the contract does not define is the repair's mistake, not a missing declaration.
+    const ghost = failing([{ op: "update_field_mapping", source: "payments", target: "amount_cents", from: "amount_minor", as: "minor_units" }]);
+    expect(ghost.length).toBeGreaterThan(0);
+    expect(ghost.every((r) => r.kind === "contradicted")).toBe(true);
+    // Keys other than the declared ones, and a repair aimed at a feed that is not changing.
+    expect(failing([{ op: "update_keys", source: "payments", keys: ["order_id"] }]).find((r) => /key/.test(r.assertion))).toMatchObject({ kind: "contradicted" });
+    expect(failing([{ op: "update_keys", source: "orders", keys: ["order_id"] }])[0]).toMatchObject({ kind: "contradicted" });
+    // A rename the producer declared differently.
+    expect(failing([{ op: "rename_field", source: "payments", target: "amount_cents", from: "payment_amount", to: "amount_cents" }], { payments: { ...cand, assertions: { ...cand.assertions, renames: { amount_cents: "fee_amount" } } } }).find((r) => /rename/.test(r.assertion))).toMatchObject({ kind: "contradicted" });
+    // A refund convention the producer never stated stays "missing".
+    expect(failing([{ op: "set_refund_convention", source: "payments", convention: "positive_amount_with_kind" }], { payments: { ...cand, semantics: { ...cand.semantics, refund_convention: null } } } as any).find((r) => /refund/.test(r.assertion))).toMatchObject({ kind: "missing" });
+  });
+
+  it("concurrent requests for the same revision share one checkout", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const sha = await ensureFixtureRepo();
+    const target = await revisionDir(sha);
+    fs.rmSync(target, { recursive: true, force: true });
+    fs.mkdirSync(target, { recursive: true }); // a half-made directory from an interrupted checkout
+    const dirs = await Promise.all([revisionDir(sha), revisionDir(sha), revisionDir(sha), ensureFixtureRepo()]);
+    expect(new Set(dirs.slice(0, 3)).size).toBe(1);
+    expect(fs.existsSync(path.join(target, "run.mjs"))).toBe(true);
+  });
+
   it("the stale x100 conversion is caught per record: 1234 cents must not become 123400", async () => {
     const current = baselineContract("payments");
     const data = baselineData("baseline_usd");
@@ -152,6 +195,15 @@ describe("scenario plan validation", () => {
     expect(reasons({ ...base, expected_outcome: { ...base.expected_outcome, outcome: "pass_and_publish" } })[0]).toMatch(/contradicts the declared mutation/);
     expect(reasons({ ...base, events: [] })[0]).toMatch(/exactly one source.change.proposed/);
     expect(reasons({ ...base, extra: true })[0]).toBeDefined();
+    // Delivery and extra-batch plans whose script would not produce the outcome they claim.
+    const delay = CATALOG[13].plan; // shipping export late, arrives before cutoff
+    const early = { ...delay, events: [...delay.events.filter((e) => !/export\.started|batch\.arrived/.test(e.type)), { offset_min: 20, type: "source.batch.arrived", source: "shipping", payload: {} }] };
+    expect(reasons(early).join()).toMatch(/needs the cycle batch to arrive after minute/);
+    const redeliver = CATALOG[9].plan; // already-applied batch delivered again
+    const src = redeliver.team as string;
+    expect(reasons({ ...redeliver, events: [...redeliver.events.filter((e) => !e.payload?.batch), { offset_min: 150, type: "source.batch.arrived", source: src, payload: { batch: "stale" } }] }).join()).toMatch(/needs payload.batch "redelivery"/);
+    expect(reasons({ ...redeliver, events: [...redeliver.events.filter((e) => !e.payload?.batch), { offset_min: 1, type: "source.batch.arrived", source: src, payload: { batch: "redelivery" } }] }).join()).toMatch(/must arrive after the cycle batch/);
+    expect(reasons({ ...base, events: [...base.events, { offset_min: 16, type: "source.export.started", source: "payments", payload: {} }, { offset_min: 17, type: "source.export.started", source: "payments", payload: {} }] }).join()).toMatch(/more than one source.export.started/);
     // Late delivery may only be scripted by delay_export; otherwise the expected outcome would be wrong.
     const lateArrival = { ...base, events: [...base.events.filter((e) => !(e.type === "source.batch.arrived" && e.source === "payments")), { offset_min: 190, type: "source.batch.arrived", source: "payments", payload: {} }] };
     expect(reasons(lateArrival).join()).toMatch(/may not arrive after the hard deadline/);
@@ -206,6 +258,60 @@ describe("OpenClaw adapter", () => {
   it("passes the prompt through a private file, never the command line", async () => {
     const r = await turn(stub("args", `case "$*" in *PROMPT_MARKER_42*) echo leaked >&2; exit 1;; esac\ncat <<'J'\n${envelope("moonshotai-kimi-k3.1-pro-trial")}\nJ`));
     expect(r.text).toBe('{"ok":true}');
+  });
+});
+
+describe("agent retries", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sg-retry-"));
+  const bin = path.join(dir, "openclaw");
+  const counter = path.join(dir, "calls");
+  const reply = JSON.stringify({ status: "ok", result: { payloads: [{ text: "not json" }], meta: { durationMs: 12.6, finalAssistantVisibleText: "not json", agentMeta: { provider: "cerebras", model: "moonshotai-kimi-k3.1-pro-trial", usage: {} } } } });
+  const setBin = (body: string) => {
+    fs.writeFileSync(bin, `#!/bin/sh\necho x >> ${counter}\n${body}\n`, { mode: 0o755 });
+    fs.rmSync(counter, { force: true });
+    process.env.OPENCLAW_BIN = bin;
+    process.env.OPENCLAW_MODEL = "cerebras/moonshotai-kimi-k3.1-pro-trial";
+    resetBreaker();
+  };
+  const calls = () => (fs.existsSync(counter) ? fs.readFileSync(counter, "utf8").trim().split("\n").length : 0);
+  const ask = (mode: "live" | "auto", parse: (t: string) => any) => callAgent({ runId: null, batchId: `retry_${Math.random().toString(16).slice(2)}`, mode, faults: [] }, { role: "payments_author", purpose: "retry-test", packet: authorPacket("payments", 4242, []), parse });
+  afterAll(() => {
+    delete process.env.OPENCLAW_BIN;
+    resetBreaker();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("live mode makes at most the configured number of provider calls", async () => {
+    setBin(`echo "status=503 unavailable" >&2; exit 1`);
+    const r = await ask("live", () => ({ ok: true, value: 1 }));
+    expect(r).toMatchObject({ ok: false, category: "unavailable" });
+    expect(calls()).toBe(2);
+  }, 30_000);
+
+  it("live mode allows exactly one correction after an invalid reply, and stores a whole-number duration", async () => {
+    setBin(`cat <<'J'\n${reply}\nJ`);
+    const seen: string[] = [];
+    const r = await ask("live", (t) => (seen.push(t), { ok: false, category: "malformed_output", errors: ["not JSON"] }));
+    expect(r).toMatchObject({ ok: false, category: "malformed_output" });
+    expect(calls()).toBe(2);
+    expect(seen).toHaveLength(2);
+  }, 30_000);
+
+  it("auto mode still gets its correction turn after falling back to fixture output", async () => {
+    setBin(`echo "status=429 code=queue_exceeded" >&2; exit 1`);
+    let parses = 0;
+    const r = await ask("auto", () => (++parses === 1 ? { ok: false, category: "malformed_output", errors: ["try again"] } : { ok: true, value: "second" }));
+    expect(calls()).toBe(1);
+    expect(parses).toBe(2);
+    expect(r).toMatchObject({ ok: true, value: "second", mode: "fixture" });
+  }, 30_000);
+});
+
+describe("reply parsing", () => {
+  it("prefers the fenced JSON block over braces in the surrounding prose", () => {
+    expect(extractJson('Here {is} the plan:\n```json\n{"a":1}\n```\nNote the {braces} above.')).toEqual({ a: 1 });
+    expect(extractJson('prefix {"b":2} suffix')).toEqual({ b: 2 });
+    expect(() => extractJson("no object here")).toThrow();
   });
 });
 

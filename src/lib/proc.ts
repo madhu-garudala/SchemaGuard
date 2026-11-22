@@ -37,9 +37,12 @@ export function run(
         child.kill(sig);
       }
     };
+    let killTimer: NodeJS.Timeout | null = null;
+    let exitTimer: NodeJS.Timeout | null = null;
     const kill = () => {
       signal("SIGTERM");
-      setTimeout(() => signal("SIGKILL"), 2000).unref();
+      killTimer ??= setTimeout(() => signal("SIGKILL"), 2000);
+      killTimer.unref();
     };
     const timer = opts.timeoutMs
       ? setTimeout(() => {
@@ -52,18 +55,24 @@ export function run(
       kill();
     };
     opts.abort?.addEventListener("abort", onAbort, { once: true });
+    if (opts.abort?.aborted) onAbort();
     let settled = false;
     const done = (code: number | null, extra = "") => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (exitTimer) clearTimeout(exitTimer);
+      // Once the child is gone its process-group id can be reused; never signal it later.
+      if (killTimer && code !== null) clearTimeout(killTimer);
       opts.abort?.removeEventListener("abort", onAbort);
       resolve({ code, stdout, stderr: stderr + extra, timedOut, aborted, elapsedMs: Date.now() - started });
     };
     child.on("error", (err) => done(null, `\nspawn error: ${err.message}`));
     child.on("close", (code) => done(code));
     // A helper process can keep the pipes open after the child exits; do not wait for it.
-    child.on("exit", (code) => setTimeout(() => done(code), 250));
+    child.on("exit", (code) => {
+      exitTimer = setTimeout(() => done(code), 250);
+    });
     child.stdin.on("error", () => {});
     child.stdin.end(opts.input ?? "");
   });

@@ -4,7 +4,7 @@ import { RESPONSE_POLICY } from "./agents/prompts";
 import { extractJson, type Parsed } from "./agents/schemas";
 import { CATALOG, catalogPlanId } from "./catalog";
 import { cfg, type RoleKey } from "./config";
-import { q } from "./db";
+import { q, tx } from "./db";
 import { baselineContract, baselineData, lineage } from "./fixtures";
 import { MUTATION_SPECS, type MutationType } from "./mutations";
 import { DEFAULT_TIMING, describeMutations, PLAN_EVENT_PAYLOADS, validatePlan, type PlanSansExpectation } from "./scenario";
@@ -33,7 +33,7 @@ const EVENT_DOCS: Record<string, string> = {
   "source.batch.arrived": "payload {} for the cycle batch, or {batch: 'redelivery' | 'stale'} for an extra delivery.",
 };
 
-function authorPacket(team: SourceId, seed: number, covered: string[]) {
+export function authorPacket(team: SourceId, seed: number, covered: string[]) {
   const c = baselineContract(team);
   const data = baselineData("baseline_usd")[team];
   const lin = lineage();
@@ -78,7 +78,8 @@ async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>
  */
 export async function generateScenarios(batchId: string, seed: number, perAuthor = 2, mode = cfg().agentMode): Promise<{ accepted: number; invalid: number; wall_ms: number }> {
   const started = Date.now();
-  const tasks = SOURCES.flatMap((team, t) => Array.from({ length: perAuthor }, (_, i) => ({ team, seed: seed + t * 101 + i * 7 })));
+  // Round by round, so the three authors work side by side and a later round sees what the earlier one covered.
+  const tasks = Array.from({ length: perAuthor }, (_, i) => SOURCES.map((team, t) => ({ team, seed: seed + t * 101 + i * 7 }))).flat();
   let accepted = 0;
   let invalid = 0;
   await pool(tasks, cfg().authorConcurrency, async ({ team, seed: s }) => {
@@ -107,21 +108,27 @@ export async function generateScenarios(batchId: string, seed: number, perAuthor
       return { ok: true, value: { plan: v.plan, expectation: v.expectation, text } };
     };
     const res = await callAgent(ctx, { role, purpose: `author:${team}:${s}`, packet: authorPacket(team, s, covered), parse });
-    const last = await q<{ mode: string; model: string | null; id: string }>("SELECT id, mode, model FROM agent_runs WHERE batch_id=$1 AND purpose=$2 ORDER BY id DESC LIMIT 1", [batchId, `author:${team}:${s}`]);
+    // Link every draft to the turn that produced it, so its mode and model are shown correctly.
+    const turns = await q<{ id: string; status: string; error_category: string | null }>("SELECT id, status, error_category FROM agent_runs WHERE batch_id=$1 AND purpose=$2 ORDER BY id", [batchId, `author:${team}:${s}`]);
+    const rejectedTurns = turns.filter((t) => t.status === "error" && (t.error_category === "malformed_output" || t.error_category === "invalid_evidence"));
+    const okTurn = turns.find((t) => t.status === "ok");
+    const lastTurn = turns[turns.length - 1];
     const base = [batchId, `${team[0].toUpperCase()}${team.slice(1)} scenario author`, agentId, team, s];
     let attempt = 0;
     for (const d of drafts) {
       invalid++;
-      await q("INSERT INTO scenario_plans (id,origin,batch_id,author_role,agent_id,team,seed,status,reasons,attempt,raw_output,agent_run_id) VALUES ($1,'agent',$2,$3,$4,$5,$6,'invalid',$7,$8,$9,$10)", [`gen_${crypto.randomBytes(6).toString("hex")}`, ...base, JSON.stringify(d.reasons), ++attempt, d.text.slice(0, 8000), last[0]?.id ?? null]);
+      await q("INSERT INTO scenario_plans (id,origin,batch_id,author_role,agent_id,team,seed,status,reasons,attempt,raw_output,agent_run_id) VALUES ($1,'agent',$2,$3,$4,$5,$6,'invalid',$7,$8,$9,$10)", [`gen_${crypto.randomBytes(6).toString("hex")}`, ...base, JSON.stringify(d.reasons), ++attempt, d.text.slice(0, 8000), rejectedTurns[attempt - 1]?.id ?? null]);
     }
     if (res.ok) {
       accepted++;
       const id = `gen_${crypto.randomBytes(6).toString("hex")}`;
-      await q("INSERT INTO scenario_plans (id,origin,batch_id,author_role,agent_id,team,seed,status,attempt,title,summary,plan,raw_output,agent_run_id) VALUES ($1,'agent',$2,$3,$4,$5,$6,'accepted',$7,$8,$9,$10,$11,$12)", [id, ...base, attempt + 1, `${team[0].toUpperCase()}${team.slice(1)} variant · seed ${s}`, describeMutations(res.value.plan), JSON.stringify(res.value.plan), res.value.text.slice(0, 8000), last[0]?.id ?? null]);
-      await q("INSERT INTO scenario_expectations (plan_id, expected) VALUES ($1,$2)", [id, JSON.stringify(res.value.expectation)]);
+      await tx(async (db) => {
+        await q("INSERT INTO scenario_plans (id,origin,batch_id,author_role,agent_id,team,seed,status,attempt,title,summary,plan,raw_output,agent_run_id) VALUES ($1,'agent',$2,$3,$4,$5,$6,'accepted',$7,$8,$9,$10,$11,$12)", [id, ...base, attempt + 1, `${team[0].toUpperCase()}${team.slice(1)} variant · seed ${s}`, describeMutations(res.value.plan), JSON.stringify(res.value.plan), res.value.text.slice(0, 8000), okTurn?.id ?? null], db);
+        await q("INSERT INTO scenario_expectations (plan_id, expected) VALUES ($1,$2)", [id, JSON.stringify(res.value.expectation)], db);
+      });
     } else if (drafts.length === 0) {
       invalid++;
-      await q("INSERT INTO scenario_plans (id,origin,batch_id,author_role,agent_id,team,seed,status,reasons,attempt,agent_run_id) VALUES ($1,'agent',$2,$3,$4,$5,$6,'invalid',$7,1,$8)", [`gen_${crypto.randomBytes(6).toString("hex")}`, ...base, JSON.stringify([`No plan returned: ${res.category.replace(/_/g, " ")} — ${res.message}`]), last[0]?.id ?? null]);
+      await q("INSERT INTO scenario_plans (id,origin,batch_id,author_role,agent_id,team,seed,status,reasons,attempt,agent_run_id) VALUES ($1,'agent',$2,$3,$4,$5,$6,'invalid',$7,1,$8)", [`gen_${crypto.randomBytes(6).toString("hex")}`, ...base, JSON.stringify([`No plan returned: ${res.category.replace(/_/g, " ")} — ${res.message}`]), lastTurn?.id ?? null]);
     }
   });
   return { accepted, invalid, wall_ms: Date.now() - started };

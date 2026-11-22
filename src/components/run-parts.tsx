@@ -155,7 +155,7 @@ export function SnapshotCompare({ run }: { run: RunDetail }) {
         </Status>
       );
   }
-  const metrics = a && b ? Object.keys(a.dashboards) : [];
+  const metrics = a && b ? [...new Set([...Object.keys(b.dashboards), ...Object.keys(a.dashboards)])] : [];
   return (
     <div>
       <div className="compare">
@@ -183,15 +183,15 @@ export function SnapshotCompare({ run }: { run: RunDetail }) {
               </thead>
               <tbody>
                 {metrics.flatMap((d) =>
-                  Object.keys(a.dashboards[d] ?? {}).map((m) => {
+                  [...new Set([...Object.keys(b.dashboards[d] ?? {}), ...Object.keys(a.dashboards[d] ?? {})])].map((m) => {
                     const bv = b.dashboards[d]?.[m];
-                    const av = a.dashboards[d][m];
+                    const av = a.dashboards[d]?.[m];
                     return (
                       <tr key={`${d}.${m}`}>
                         <td>{humanize(d)}</td>
                         <td>{humanize(m)}</td>
                         <td className="r num">{bv == null ? "—" : formatMetric(m, bv)}</td>
-                        <td className="r num">{formatMetric(m, av)}</td>
+                        <td className="r num">{av == null ? "—" : formatMetric(m, av)}</td>
                         <td>{bv === av ? <Status tone="good">Yes</Status> : <Status tone="bad">No</Status>}</td>
                       </tr>
                     );

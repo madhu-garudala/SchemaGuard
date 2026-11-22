@@ -3,7 +3,7 @@ import type {
   AgentRunView, CatalogCase, EventView, EvidenceView, GeneratedPlan, GenerateResponse, IncidentView, Overview, RunDetail, RunSummary, ScenariosView, SnapshotView, SourceView, StartRunRequest, StartRunResponse, TimelineEntry, WorkerView,
 } from "./api-types";
 import { CATALOG, catalogPlanId } from "./catalog";
-import { iso, q, q1 } from "./db";
+import { iso, q, q1, tx } from "./db";
 import { lineage } from "./lineage-data";
 import { enqueue } from "./queue";
 import { SOURCES, type Contract } from "./types";
@@ -109,14 +109,15 @@ export async function getOverview(): Promise<Overview> {
 }
 
 export async function getScenarios(): Promise<ScenariosView> {
-  const runs = (await q(`${RUN_SQL} WHERE r.kind='scenario' OR r.plan_id='catalog-01' ORDER BY r.created_at DESC LIMIT 400`)).map((r) => ({ plan_id: r.plan_id as string, summary: runSummary(r) }));
-  const last = (planId: string) => runs.find((r) => r.plan_id === planId && r.summary.kind === "scenario")?.summary ?? null;
+  // The newest scenario run of every plan, however many runs exist.
+  const runs = new Map((await q(`${RUN_SQL} WHERE r.id IN (SELECT DISTINCT ON (plan_id) id FROM runs WHERE kind='scenario' ORDER BY plan_id, created_at DESC)`)).map((r) => [r.plan_id as string, runSummary(r)]));
+  const last = (planId: string) => runs.get(planId) ?? null;
   const expected = new Map((await q<{ plan_id: string; expected: any }>("SELECT plan_id, expected FROM scenario_expectations WHERE plan_id LIKE 'catalog-%'")).map((e) => [e.plan_id, e.expected]));
   const catalog = CATALOG.map((c): CatalogCase => ({ case_no: c.case_no, plan_id: catalogPlanId(c.case_no), title: c.title, team: c.team, summary: `${c.summary} Expected: ${c.expected_result}`, expected_outcome: expected.get(catalogPlanId(c.case_no))?.outcome ?? c.plan.expected_outcome.outcome, quick: c.quick, last_run: last(catalogPlanId(c.case_no)) }));
   const plans = await q("SELECT p.*, a.mode AS a_mode, a.model AS a_model FROM scenario_plans p LEFT JOIN agent_runs a ON a.id = p.agent_run_id WHERE p.origin='agent' ORDER BY p.created_at DESC, p.id LIMIT 80");
   const generated = plans.map((p): GeneratedPlan => ({ id: p.id, batch_id: p.batch_id, author_role: p.author_role, agent_id: p.agent_id, team: p.team, seed: Number(p.seed), status: p.status, reasons: p.reasons, attempt: p.attempt, mode: p.a_mode ?? "fixture", model: p.a_model ?? null, title: p.title, mutation_summary: p.summary, event_count: p.plan?.events?.length ?? 0, created_at: iso(p.created_at)!, last_run: last(p.id) }));
   const job = await q1("SELECT * FROM jobs WHERE type='scenarios.generate' ORDER BY id DESC LIMIT 1");
-  return { catalog, generated, generation: job ? { job_id: String(job.id), status: job.status, batch_id: job.payload.batch_id, seed: job.payload.seed, created_at: iso(job.created_at)! } : null, worker: await workerView() };
+  return { catalog, generated, generation: job ? { job_id: String(job.id), status: job.status, batch_id: job.payload.batch_id, seed: job.payload.seed, created_at: iso(job.created_at)!, error: job.status === "failed" ? (job.last_error ?? null) : null } : null, worker: await workerView() };
 }
 
 const FAULTS = ["bad_repair", "agent_unavailable", "malformed_output"];
@@ -134,17 +135,24 @@ export async function startRun(body: StartRunRequest): Promise<StartRunResponse>
   const id = `run_${hex}`;
   const title = body.kind === "rehearsal" ? `Schema-change rehearsal R-${hex.slice(0, 4).toUpperCase()}` : `Scenario replay S-${hex.slice(0, 4).toUpperCase()}`;
   const hb = await workerView();
-  await q("INSERT INTO runs (id,env_id,kind,plan_id,title,options,agent_mode) VALUES ($1,$2,$3,$4,$5,$6,$7)", [id, `env_${hex}`, body.kind, planId, title, JSON.stringify({ fault: body.fault ?? null }), hb.agent_mode ?? "auto"]);
-  await enqueue("run.execute", { run_id: id }, { dedupKey: `run:${id}`, serialKey: `fixture:${plan.plan.starting_snapshot}` });
+  // One transaction: a run without its job would sit in "queued" forever and block the rehearsal button.
+  await tx(async (db) => {
+    await q("INSERT INTO runs (id,env_id,kind,plan_id,title,options,agent_mode) VALUES ($1,$2,$3,$4,$5,$6,$7)", [id, `env_${hex}`, body.kind, planId, title, JSON.stringify({ fault: body.fault ?? null }), hb.agent_mode ?? "auto"], db);
+    await enqueue("run.execute", { run_id: id }, { dedupKey: `run:${id}`, serialKey: `fixture:${plan.plan.starting_snapshot}` }, db);
+  });
   return { run_id: id };
 }
 
 export async function startGeneration(body: { seed?: number }): Promise<GenerateResponse> {
   const seed = body?.seed ?? Math.floor(Date.now() / 1000) % 1_000_000;
   if (!Number.isInteger(seed) || seed < 0 || seed > 2_000_000_000) throw new HttpError(400, "seed must be a non-negative integer");
-  const running = await q1<{ id: string; payload: any }>("SELECT id, payload FROM jobs WHERE type='scenarios.generate' AND status IN ('queued','running') LIMIT 1");
-  if (running) return { job_id: String(running.id), batch_id: running.payload.batch_id };
-  const batch_id = `batch_${crypto.randomBytes(4).toString("hex")}`;
-  const job_id = await enqueue("scenarios.generate", { batch_id, seed }, { dedupKey: `generate:${batch_id}`, maxAttempts: 1 });
-  return { job_id: String(job_id), batch_id };
+  // The lock makes "is one already going?" and "start one" a single step, so two clicks cannot start two batches.
+  return tx(async (db) => {
+    await q("SELECT pg_advisory_xact_lock(hashtext('scenarios.generate'))", [], db);
+    const running = await q1<{ id: string; payload: any }>("SELECT id, payload FROM jobs WHERE type='scenarios.generate' AND status IN ('queued','running') LIMIT 1", [], db);
+    if (running) return { job_id: String(running.id), batch_id: running.payload.batch_id };
+    const batch_id = `batch_${crypto.randomBytes(4).toString("hex")}`;
+    const job_id = await enqueue("scenarios.generate", { batch_id, seed }, { dedupKey: `generate:${batch_id}`, maxAttempts: 1 }, db);
+    return { job_id: String(job_id), batch_id };
+  });
 }

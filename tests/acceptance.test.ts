@@ -185,6 +185,32 @@ describe("catalog", () => {
   });
 });
 
+describe("repairs a live model could return", () => {
+  it("runs the negative control when the repair is one generic mapping update", async () => {
+    const d = await runPlan(caseId(1), { fault: "generic_repair" });
+    expect(d.incidents[0].repair!.operations.map((o) => o.op)).toEqual(["update_field_mapping"]);
+    expect(d.run.outcome).toBe("repair_and_publish");
+    const control = d.incidents[0].repair!.replay!.checks.find((c) => c.id === "negative_control")!;
+    expect(control.passed).toBe(true);
+    expect(control.sample).toEqual(expect.arrayContaining([{ payment_id: "P-5001", correct_cents: "12999", control_cents: "1299900" }]));
+  });
+
+  it("rejects a repair that reads a field the contract does not define, without asking the producer to clarify", async () => {
+    const d = await runPlan(caseId(1), { fault: "hallucinated_repair" });
+    expect(d.run.outcome).toBe("hold_previous_snapshot");
+    expect(d.incidents[0].status).toBe("blocked");
+    expect(d.incidents[0].repair!.gate!.required.find((g) => !g.present)).toMatchObject({ kind: "contradicted" });
+    expect((await q1("SELECT status FROM contracts WHERE env_id=$1 AND source='payments' AND version=2", [d.env.id])).status).toBe("rejected");
+    expect(d.snapshot_current!.revision).toBe(1);
+  });
+
+  it("removes the repair worktree whether the repair is verified or rejected", async () => {
+    const fs = await import("node:fs");
+    const dir = ".runtime-test/worktrees";
+    expect(fs.existsSync(dir) ? fs.readdirSync(dir) : []).toEqual([]);
+  });
+});
+
 describe("agent output handling", () => {
   it("rejects evidence IDs from another run, keeps the failure, and accepts the corrected reply", async () => {
     const d = await runPlan(caseId(1), { fault: "wrong_evidence" });
@@ -256,6 +282,19 @@ describe("queue", () => {
     await q("DELETE FROM jobs");
   });
 
+  it("a lease lost before the final step leaves the run unfinished for the new holder", async () => {
+    const { LeaseLost } = await import("../src/lib/runner");
+    const id = await insertRun(caseId(2));
+    await q("UPDATE runs SET status='running' WHERE id=$1", [id]);
+    let calls = 0;
+    // The checkpoint fails only once the script has no items left, i.e. immediately before finish().
+    const run = executeRun(id, { checkpoint: async () => { calls++; const done = await q1("SELECT 1 AS ok FROM snapshots WHERE run_id=$1 AND status='published'", [id]); if (done) throw new LeaseLost("lease moved"); } });
+    await expect(run).rejects.toBeInstanceOf(LeaseLost);
+    expect(calls).toBeGreaterThan(1);
+    expect((await q1("SELECT status, outcome FROM runs WHERE id=$1", [id]))).toMatchObject({ status: "running", outcome: null });
+    expect(await q1("SELECT 1 AS ok FROM scores WHERE run_id=$1", [id])).toBeFalsy();
+  });
+
   it("re-executing a run is idempotent and reuses completed agent turns", async () => {
     const id = await insertRun(caseId(1));
     await executeRun(id);
@@ -299,6 +338,10 @@ describe("scenario authors", () => {
     const d = await runPlan(accepted[0].id);
     expect(d.run.status).toBe("completed");
     expect(d.score!.items.filter((i) => !i.match)).toEqual([]);
+    // Each stored draft points at the turn that produced it, and every accepted plan has its expectation.
+    const turnOf = async (p: any) => q1("SELECT status FROM agent_runs WHERE id=$1", [p.agent_run_id]);
+    for (const p of invalid) expect((await turnOf(p)).status).toBe("error");
+    for (const p of accepted) expect((await turnOf(p)).status).toBe("ok");
     const authors = await q("SELECT DISTINCT agent_id FROM agent_runs WHERE batch_id='batch_test'");
     expect(authors.map((a) => a.agent_id).sort()).toEqual(["sg-orders-author", "sg-payments-author", "sg-shipping-author"]);
   });
@@ -313,6 +356,25 @@ describe("API commands", () => {
     const { run_id } = await startRun({ kind: "rehearsal" });
     expect(run_id).toMatch(/^run_[0-9a-f]{12}$/);
     expect((await q1("SELECT status, serial_key FROM jobs WHERE dedup_key=$1", [`run:${run_id}`]))).toEqual({ status: "queued", serial_key: "fixture:baseline_usd" });
+  });
+
+  it("starting a generation twice returns the same batch", async () => {
+    const { startGeneration, getScenarios } = await import("../src/lib/queries");
+    await q("DELETE FROM jobs");
+    const [a, b] = await Promise.all([startGeneration({ seed: 5 }), startGeneration({ seed: 6 })]);
+    expect(a.batch_id).toBe(b.batch_id);
+    expect((await q("SELECT 1 FROM jobs WHERE type='scenarios.generate'")).length).toBe(1);
+    await q("UPDATE jobs SET status='failed', last_error='provider unreachable'");
+    expect((await getScenarios()).generation).toMatchObject({ status: "failed", error: "provider unreachable" });
+    await q("DELETE FROM jobs");
+  });
+
+  it("the scenarios view shows the newest scenario run of each plan", async () => {
+    const { getScenarios } = await import("../src/lib/queries");
+    const v = await getScenarios();
+    const newest = await q1("SELECT id FROM runs WHERE plan_id=$1 AND kind='scenario' ORDER BY created_at DESC LIMIT 1", [caseId(2)]);
+    expect(v.catalog.find((c) => c.case_no === 2)!.last_run).toMatchObject({ kind: "scenario", id: newest.id });
+    expect(v.catalog.every((c) => c.last_run === null || c.last_run.kind === "scenario")).toBe(true);
   });
 
   it("reports an offline worker in the overview", async () => {

@@ -65,7 +65,7 @@ export interface GateItem {
   assertion: string;
   present: boolean;
   detail: string;
-  /** "missing" = the producer has not declared it. "contradicted" = the producer declared something else. */
+  /** "missing" = the producer has not declared it (owner must clarify). "contradicted" = the repair is wrong: it conflicts with what the producer declared or reads something the contract does not define. */
   kind?: "missing" | "contradicted";
 }
 
@@ -81,20 +81,21 @@ export function assertionGate(ops: RepairOperation[], repaired: Record<string, M
   for (const op of ops) {
     const c = candidates[op.source];
     if (!c) {
-      add(`${op.source}: candidate contract`, false, `no proposed contract for ${op.source}`);
+      add(`${op.source}: candidate contract`, false, `the repair touches ${op.source}, which has no proposed contract in this change`, "contradicted");
       continue;
     }
     if (op.op === "rename_field") {
       const declared = c.assertions?.renames?.[op.to] === op.from;
-      add(`${op.source}: rename ${op.from} -> ${op.to} declared`, declared, declared ? "producer lists the rename in contract assertions" : "the proposal does not state that the new field replaces the old one");
+      const other = c.assertions?.renames?.[op.to];
+      add(`${op.source}: rename ${op.from} -> ${op.to} declared`, declared, declared ? "producer lists the rename in contract assertions" : other ? `the producer declares that ${op.to} replaces ${other}, not ${op.from}` : "the proposal does not state that the new field replaces the old one", other ? "contradicted" : "missing");
     }
     if (op.op === "update_keys") {
       const same = c.keys.join("|") === op.keys.join("|");
-      add(`${op.source}: key (${op.keys.join(", ")}) declared`, same, same ? "matches the keys in the proposed contract" : `proposed contract declares (${c.keys.join(", ")})`);
+      add(`${op.source}: key (${op.keys.join(", ")}) declared`, same, same ? "matches the keys in the proposed contract" : `proposed contract declares (${c.keys.join(", ")})`, "contradicted");
     }
     if (op.op === "set_refund_convention") {
       const same = c.semantics.refund_convention === op.convention;
-      add(`payments: refund convention ${op.convention} declared`, same, same ? "declared in contract semantics" : `contract declares ${c.semantics.refund_convention ?? "nothing"}`);
+      add(`payments: refund convention ${op.convention} declared`, same, same ? "declared in contract semantics" : `contract declares ${c.semantics.refund_convention ?? "nothing"}`, c.semantics.refund_convention ? "contradicted" : "missing");
     }
   }
   // Whatever operation produced it: a canonical field that now reads a different source field, because the
@@ -105,8 +106,10 @@ export function assertionGate(ops: RepairOperation[], repaired: Record<string, M
       if (!before || !f.from || before === f.from || c.fields.some((x) => x.name === before)) continue;
       const assertion = `${src}: rename ${before} -> ${f.from} declared`;
       if (required.some((r) => r.assertion === assertion)) continue;
-      const declared = c.assertions?.renames?.[f.from] === before;
-      add(assertion, declared, declared ? "producer lists the rename in contract assertions" : `${target} now reads ${f.from} instead of the removed ${before}, but the proposal does not state that one replaces the other`);
+      if (!c.fields.some((x) => x.name === f.from)) continue; // reported below as a field the contract does not define
+      const other = c.assertions?.renames?.[f.from];
+      const declared = other === before;
+      add(assertion, declared, declared ? "producer lists the rename in contract assertions" : other ? `the producer declares that ${f.from} replaces ${other}, not ${before}` : `${target} now reads ${f.from} instead of the removed ${before}, but the proposal does not state that one replaces the other`, other ? "contradicted" : "missing");
     }
   }
   // Every money cast in a touched mapping must agree with a unit the producer declared.
@@ -117,13 +120,13 @@ export function assertionGate(ops: RepairOperation[], repaired: Record<string, M
       const unit = f.as ? MONEY_CAST_UNIT[f.as] : undefined;
       if (!unit || !f.from) continue;
       const field = c.fields.find((x) => x.name === f.from);
-      if (!field) add(`${src}: source field ${f.from} exists`, false, `mapping for ${target} reads ${f.from}, which the proposed contract does not define`);
+      if (!field) add(`${src}: source field ${f.from} exists`, false, `mapping for ${target} reads ${f.from}, which the proposed contract does not define`, "contradicted");
       else if (field.unit === null) add(`${src}: unit of ${f.from} declared`, false, `the proposed contract gives no unit for ${f.from}; ${unit} is only an inference from samples`);
       else add(`${src}: unit of ${f.from} is ${unit}`, field.unit === unit, field.unit === unit ? `producer declares ${f.from} in ${field.unit}` : `producer declares ${field.unit}, mapping assumes ${unit}`, "contradicted");
     }
     for (const [target, f] of Object.entries(m.fields)) {
       if (f.from && f.as !== "optional_string" && !MONEY_CAST_UNIT[f.as ?? ""] && !c.fields.some((x) => x.name === f.from))
-        add(`${src}: source field ${f.from} exists`, false, `mapping for ${target} reads ${f.from}, which the proposed contract does not define`);
+        add(`${src}: source field ${f.from} exists`, false, `mapping for ${target} reads ${f.from}, which the proposed contract does not define`, "contradicted");
     }
   }
   return { passed: required.every((r) => r.present), required };

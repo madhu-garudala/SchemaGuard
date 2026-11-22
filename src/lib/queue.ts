@@ -1,3 +1,4 @@
+import type pg from "pg";
 import { q, q1 } from "./db";
 
 export interface Job {
@@ -14,12 +15,13 @@ export interface Job {
 }
 
 /** Enqueue once per logical operation: a repeated request with the same dedup key returns the existing job. */
-export async function enqueue(type: string, payload: unknown, opts: { dedupKey: string; serialKey?: string | null; maxAttempts?: number }): Promise<string> {
+export async function enqueue(type: string, payload: unknown, opts: { dedupKey: string; serialKey?: string | null; maxAttempts?: number }, db?: pg.PoolClient): Promise<string> {
   const row = await q1<{ id: string }>(
     `INSERT INTO jobs (type,payload,dedup_key,serial_key,max_attempts) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (dedup_key) DO NOTHING RETURNING id`,
     [type, JSON.stringify(payload), opts.dedupKey, opts.serialKey ?? null, opts.maxAttempts ?? 3],
+    db,
   );
-  return row?.id ?? (await q1<{ id: string }>("SELECT id FROM jobs WHERE dedup_key=$1", [opts.dedupKey]))!.id;
+  return row?.id ?? (await q1<{ id: string }>("SELECT id FROM jobs WHERE dedup_key=$1", [opts.dedupKey], db))!.id;
 }
 
 /**
