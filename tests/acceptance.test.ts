@@ -154,7 +154,7 @@ describe("catalog", () => {
     const base = CATALOG[3].plan; // required order ID removed: blocked at rehearsal
     const proposed = base.events.find((e) => e.type === "source.change.proposed")!;
     const planId = "t-blocked-withdrawn";
-    const plan = { ...base, events: [...base.events, { offset_min: proposed.offset_min + (proposed.payload.effective_in_min as number) - 1, type: "source.change.withdrawn", source: proposed.source, payload: {} }], expected_outcome: { ...base.expected_outcome, outcome: "withdrawn_no_change" } };
+    const plan = { ...base, events: [...base.events, { offset_min: 20, type: "source.change.withdrawn", source: proposed.source, payload: {} }], expected_outcome: { ...base.expected_outcome, outcome: "withdrawn_no_change" } };
     const v = validatePlan(plan, "catalog");
     if (!v.ok) throw new Error(v.reasons.join("; "));
     const { expected_outcome, ...sans } = plan;
