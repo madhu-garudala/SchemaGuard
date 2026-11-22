@@ -186,5 +186,6 @@ export function categoryForBatchProblems(problems: { check: string }[]): CauseCa
   if (has("volume_out_of_range")) return "volume_anomaly";
   if (has("transformation")) return "transform_failure";
   if (has("missing_required")) return "required_key_removed";
+  if (has("null_not_allowed")) return "nullability_violation";
   return "unknown";
 }

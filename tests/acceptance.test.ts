@@ -148,6 +148,24 @@ describe("catalog", () => {
     expect(cited.every((id) => own.includes(id))).toBe(true);
   });
 
+  it("a blocked proposal that is later withdrawn lets the cycle finish normally", async () => {
+    const { CATALOG } = await import("../src/lib/catalog");
+    const { validatePlan } = await import("../src/lib/scenario");
+    const base = CATALOG[3].plan; // required order ID removed: blocked at rehearsal
+    const proposed = base.events.find((e) => e.type === "source.change.proposed")!;
+    const planId = "t-blocked-withdrawn";
+    const plan = { ...base, events: [...base.events, { offset_min: proposed.offset_min + (proposed.payload.effective_in_min as number) - 1, type: "source.change.withdrawn", source: proposed.source, payload: {} }], expected_outcome: { ...base.expected_outcome, outcome: "withdrawn_no_change" } };
+    const v = validatePlan(plan, "catalog");
+    if (!v.ok) throw new Error(v.reasons.join("; "));
+    const { expected_outcome, ...sans } = plan;
+    await q("INSERT INTO scenario_plans (id,origin,author_role,agent_id,team,seed,status,title,summary,quick,plan) VALUES ($1,'agent','Test','-',$2,1,'accepted',$3,'',false,$4)", [planId, plan.team, "Blocked then withdrawn", JSON.stringify(sans)]);
+    await q("INSERT INTO scenario_expectations (plan_id, expected) VALUES ($1,$2)", [planId, JSON.stringify(v.expectation)]);
+    const d = await runPlan(planId);
+    expect(d.run.outcome).toBe("withdrawn_no_change");
+    expect(d.incidents.filter((i) => i.status === "delayed" || i.status === "warning")).toEqual([]);
+    expect(d.publish_status).toBe("published");
+  });
+
   it("holds the change when the agent runtime is down; deterministic validation still decides", async () => {
     const d = await runPlan(caseId(20));
     expect(d.run.outcome).toBe("hold_previous_snapshot");

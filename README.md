@@ -105,7 +105,7 @@ Agents never decide publication. The assertion gate, the repository tests and th
 ## Tests
 
 ```bash
-npm test          # 56 tests; needs only the database (npm run db:up)
+npm test          # 58 tests; needs only the database (npm run db:up)
 npm run typecheck
 npm run build
 ```

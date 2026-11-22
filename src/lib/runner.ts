@@ -176,7 +176,8 @@ class Run {
     while (this.items.length) {
       this.items.sort((a, b) => a.at - b.at || a.seq - b.seq);
       const item = this.items.shift()!;
-      if (this.gateClosed && item.kind === "other") continue;
+      // A blocked change stops the cycle, unless a withdrawal is still to come: then the feed carries on unchanged.
+      if (this.gateClosed && item.kind === "other" && !this.items.some((x) => x.kind === "withdraw")) continue;
       await this.hooks.checkpoint?.();
       this.now = item.at;
       this.stepStarted = Date.now();
@@ -414,7 +415,7 @@ class Run {
     }
     await this.timeline({ actor: "Repair worker", kind: "repair", title: `Applied on branch ${wt.branch} (${wt.base_rev.slice(0, 7)} → ${repair.candidate_rev!.slice(0, 7)})`, detail: "Isolated Git worktree of the fixture pipeline repository. Only mapping files and the payments sample may change.", incident_id: incidentId, tone: "neutral", data: { diff: repair.diff } });
 
-    repair.gate = assertionGate(p.operations, repaired, { [src]: candidate });
+    repair.gate = assertionGate(p.operations, repaired, { [src]: candidate }, mappings);
     await this.timeline({ actor: "Release gate", kind: "gate", title: repair.gate.passed ? "Contract assertions present for every operation" : repair.gate.required.some((r) => !r.present && r.kind !== "contradicted") ? "Missing contract assertions" : "Repair contradicts the declared contract", detail: repair.gate.required.map((r) => `${r.present ? "✓" : "✗"} ${r.assertion} — ${r.detail}`).join("\n"), incident_id: incidentId, tone: repair.gate.passed ? "good" : "bad" });
 
     repair.repo_tests = await runRepoTests(wt.dir);

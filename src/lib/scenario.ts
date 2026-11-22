@@ -151,6 +151,14 @@ export function validatePlan(raw: unknown, origin: "catalog" | "agent", expected
       const c = baselineContract(src);
       if (started && started.offset_min <= c.delivery.expected_start_min + c.delivery.grace_min) reasons.push(`${src}: delay_export needs the export to start after minute ${c.delivery.expected_start_min + c.delivery.grace_min}, or not at all`);
     }
+    if (mode !== "delivery") {
+      // Only delay_export may script a late or missing delivery; otherwise the expected outcome would ignore it.
+      const d = baselineContract(src).delivery;
+      const started = exportEvents.find((e) => e.type === "source.export.started");
+      const arrived = exportEvents.find((e) => e.type === "source.batch.arrived");
+      if (started && started.offset_min > d.expected_start_min + d.grace_min) reasons.push(`${src}: the export may not start after minute ${d.expected_start_min + d.grace_min} unless the mutation is delay_export`);
+      if (arrived && arrived.offset_min > d.hard_deadline_min) reasons.push(`${src}: the cycle batch may not arrive after the hard deadline (minute ${d.hard_deadline_min}) unless the mutation is delay_export`);
+    }
     const extras = mine.filter((e) => e.type === "source.batch.arrived" && e.payload.batch && e.payload.batch !== "cycle");
     if (extras.length && mode !== "extra_batch") reasons.push(`${src}: redelivery/stale batch events need a redeliver_batch or stale_batch mutation`);
   }

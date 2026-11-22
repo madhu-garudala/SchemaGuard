@@ -174,7 +174,7 @@ export default function OverviewPage() {
   const story = o.latest_main_run;
   const focusIncident = story?.incidents[0] ?? o.alerts[0];
   const affected = focusIncident ? [...focusIncident.affected_assets, ...focusIncident.affected_dashboards, `feed.${focusIncident.source}`] : [];
-  const pendingQueued = queuedId != null && story?.run.id !== queuedId && !o.worker.online;
+  const pendingQueued = queuedId != null && story?.run.status === "queued" && !o.worker.online;
 
   return (
     <>

@@ -75,7 +75,7 @@ const MONEY_CAST_UNIT: Record<string, string> = { dollars_to_cents: "dollars", m
  * Contract-assertion gate. Sample rows that happen to reconcile cannot establish an undocumented
  * contract: every unit, key, rename and semantic the repair relies on must be declared by the producer.
  */
-export function assertionGate(ops: RepairOperation[], repaired: Record<string, Mapping>, candidates: Record<string, Contract>): { passed: boolean; required: GateItem[] } {
+export function assertionGate(ops: RepairOperation[], repaired: Record<string, Mapping>, candidates: Record<string, Contract>, base: Record<string, Mapping>): { passed: boolean; required: GateItem[] } {
   const required: GateItem[] = [];
   const add = (assertion: string, present: boolean, detail: string, kind: GateItem["kind"] = "missing") => required.push({ assertion, present, detail, ...(present ? {} : { kind }) });
   for (const op of ops) {
@@ -95,6 +95,18 @@ export function assertionGate(ops: RepairOperation[], repaired: Record<string, M
     if (op.op === "set_refund_convention") {
       const same = c.semantics.refund_convention === op.convention;
       add(`payments: refund convention ${op.convention} declared`, same, same ? "declared in contract semantics" : `contract declares ${c.semantics.refund_convention ?? "nothing"}`);
+    }
+  }
+  // Whatever operation produced it: a canonical field that now reads a different source field, because the
+  // old one is gone, relies on the producer saying the new field replaces the old one.
+  for (const [src, c] of Object.entries(candidates)) {
+    for (const [target, f] of Object.entries(repaired[src]?.fields ?? {})) {
+      const before = base[src]?.fields[target]?.from;
+      if (!before || !f.from || before === f.from || c.fields.some((x) => x.name === before)) continue;
+      const assertion = `${src}: rename ${before} -> ${f.from} declared`;
+      if (required.some((r) => r.assertion === assertion)) continue;
+      const declared = c.assertions?.renames?.[f.from] === before;
+      add(assertion, declared, declared ? "producer lists the rename in contract assertions" : `${target} now reads ${f.from} instead of the removed ${before}, but the proposal does not state that one replaces the other`);
     }
   }
   // Every money cast in a touched mapping must agree with a unit the producer declared.

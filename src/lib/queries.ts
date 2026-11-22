@@ -80,7 +80,7 @@ export async function getRunDetail(id: string): Promise<RunDetail | null> {
 }
 
 export async function getOverview(): Promise<Overview> {
-  const env = await q1("SELECT * FROM environments WHERE kind='main' ORDER BY created_at DESC LIMIT 1");
+  const env = await q1("SELECT * FROM environments WHERE kind='main' AND current_snapshot_id IS NOT NULL ORDER BY created_at DESC LIMIT 1");
   if (!env) throw new HttpError(503, "No environment yet. Run `npm run db:migrate && npm run db:seed` on the worker host.");
   const lin = lineage();
   const contracts = await q<{ source: string; body: Contract }>("SELECT source, body FROM contracts WHERE env_id=$1 AND status='active'", [env.id]);

@@ -85,10 +85,27 @@ describe("repair operations and the assertion gate", () => {
     const baseline = await runPipelineAt(dir, data);
     const candidate = await runPipelineAt(dir, { ...data, payments: eff.rows! }, { payments: repaired.payments });
     expect(reconcile(baseline, candidate).passed).toBe(true); // samples match...
-    const gate = assertionGate(ops, repaired, { payments: eff.candidateContract! });
+    const gate = assertionGate(ops, repaired, { payments: eff.candidateContract! }, readMappings(dir));
     expect(gate.passed).toBe(false); // ...but matching samples cannot establish an undocumented contract
     expect(gate.required.find((r) => !r.present)).toMatchObject({ kind: "missing" });
-    expect(gate.required.find((r) => !r.present)!.detail).toMatch(/only an inference from samples/);
+    expect(gate.required.filter((r) => !r.present).map((r) => r.detail).join(" | ")).toMatch(/only an inference from samples/);
+  });
+
+  it("blocks an undeclared rename made through a generic mapping update, even with the unit declared", async () => {
+    const data = baselineData("baseline_usd");
+    const eff = buildEffect({ type: "rename_amount_to_minor_units", new_name: "amount", declare_unit: true, declare_rename: false }, baselineContract("payments"), data.payments);
+    const ops: RepairOperation[] = [{ op: "update_field_mapping", source: "payments", target: "amount_cents", from: "amount", as: "minor_units" }];
+    const base = readMappings(dir);
+    const repaired = applyOperations(base, ops, { payments: 2 });
+    expect(reconcile(await runPipelineAt(dir, data), await runPipelineAt(dir, { ...data, payments: eff.rows! }, { payments: repaired.payments })).passed).toBe(true);
+    const gate = assertionGate(ops, repaired, { payments: eff.candidateContract! }, base);
+    expect(gate.passed).toBe(false);
+    expect(gate.required.find((r) => !r.present)).toMatchObject({ assertion: "payments: rename payment_amount -> amount declared", kind: "missing" });
+    // The declared rename still passes, and is listed once.
+    const ok = buildEffect({ type: "rename_amount_to_minor_units", new_name: "amount", declare_unit: true, declare_rename: true }, baselineContract("payments"), data.payments);
+    const okGate = assertionGate(ops, repaired, { payments: ok.candidateContract! }, base);
+    expect(okGate.passed).toBe(true);
+    expect(okGate.required.filter((r) => /rename/.test(r.assertion))).toHaveLength(1);
   });
 
   it("the stale x100 conversion is caught per record: 1234 cents must not become 123400", async () => {
@@ -103,7 +120,7 @@ describe("repair operations and the assertion gate", () => {
     const p = (r: typeof baseline) => (r.ok ? r.output.payment_facts.find((x) => x.payment_id === "P-5009")!.amount_cents : null);
     expect(p(baseline)).toBe("1234");
     expect(p(broken)).toBe("123400");
-    expect(assertionGate([], renameOnly, { payments: eff.candidateContract! }).required.find((r) => !r.present)).toMatchObject({ kind: "contradicted" });
+    expect(assertionGate([], renameOnly, { payments: eff.candidateContract! }, readMappings(dir)).required.find((r) => !r.present)).toMatchObject({ kind: "contradicted" });
   });
 
   it("the old mapping rejects every candidate row instead of guessing", async () => {
@@ -135,6 +152,9 @@ describe("scenario plan validation", () => {
     expect(reasons({ ...base, expected_outcome: { ...base.expected_outcome, outcome: "pass_and_publish" } })[0]).toMatch(/contradicts the declared mutation/);
     expect(reasons({ ...base, events: [] })[0]).toMatch(/exactly one source.change.proposed/);
     expect(reasons({ ...base, extra: true })[0]).toBeDefined();
+    // Late delivery may only be scripted by delay_export; otherwise the expected outcome would be wrong.
+    const lateArrival = { ...base, events: [...base.events.filter((e) => !(e.type === "source.batch.arrived" && e.source === "payments")), { offset_min: 190, type: "source.batch.arrived", source: "payments", payload: {} }] };
+    expect(reasons(lateArrival).join()).toMatch(/may not arrive after the hard deadline/);
   });
 });
 

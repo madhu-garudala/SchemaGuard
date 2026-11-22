@@ -24,7 +24,9 @@ async function main() {
   if (!process.env.CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY is not set in .env.local");
   if (!process.env.OPENCLAW_GATEWAY_TOKEN) {
     const token = crypto.randomBytes(24).toString("hex");
-    fs.appendFileSync(path.join(ROOT, ".env.local"), `${fs.readFileSync(path.join(ROOT, ".env.local"), "utf8").endsWith("\n") ? "" : "\n"}OPENCLAW_GATEWAY_TOKEN=${token}\n`);
+    const envFile = path.join(ROOT, ".env.local");
+    const existing = fs.existsSync(envFile) ? fs.readFileSync(envFile, "utf8") : "";
+    fs.appendFileSync(envFile, `${existing === "" || existing.endsWith("\n") ? "" : "\n"}OPENCLAW_GATEWAY_TOKEN=${token}\n`, { mode: 0o600 });
     process.env.OPENCLAW_GATEWAY_TOKEN = token;
     console.log("Generated OPENCLAW_GATEWAY_TOKEN in .env.local (gitignored).");
   }
