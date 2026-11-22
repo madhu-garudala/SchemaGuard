@@ -1,0 +1,87 @@
+{
+  "source": "orders",
+  "team": "orders",
+  "version": 1,
+  "owner": {
+    "team": "orders",
+    "name": "Orders Platform",
+    "contact": "#orders-data"
+  },
+  "keys": [
+    "order_id"
+  ],
+  "grain": "one row per order",
+  "currency_policy": {
+    "mode": "per_row",
+    "field": "currency"
+  },
+  "fields": [
+    {
+      "name": "order_id",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "Unique order identifier",
+      "unit": null
+    },
+    {
+      "name": "customer_id",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "Customer placing the order",
+      "unit": null
+    },
+    {
+      "name": "order_total",
+      "type": "decimal",
+      "required": true,
+      "nullable": false,
+      "semantic": "Booked order value including tax",
+      "unit": "dollars"
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "ISO 4217 currency of order_total",
+      "unit": null
+    },
+    {
+      "name": "quantity",
+      "type": "integer",
+      "required": true,
+      "nullable": false,
+      "semantic": "Number of units ordered",
+      "unit": "units"
+    },
+    {
+      "name": "customer_region",
+      "type": "string",
+      "required": true,
+      "nullable": true,
+      "semantic": "Sales region when known",
+      "unit": null
+    },
+    {
+      "name": "ordered_at",
+      "type": "timestamp",
+      "required": true,
+      "nullable": false,
+      "semantic": "Order creation time (UTC)",
+      "unit": null
+    }
+  ],
+  "semantics": {},
+  "delivery": {
+    "expected_start_min": 15,
+    "expected_progress_min": 40,
+    "hard_deadline_min": 180,
+    "grace_min": 10
+  },
+  "volume": {
+    "min_rows": 8,
+    "max_rows": 30
+  }
+}

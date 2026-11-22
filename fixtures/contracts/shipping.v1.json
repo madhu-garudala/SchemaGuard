@@ -1,0 +1,70 @@
+{
+  "source": "shipping",
+  "team": "shipping",
+  "version": 1,
+  "owner": {
+    "team": "shipping",
+    "name": "Fulfillment Systems",
+    "contact": "#shipping-data"
+  },
+  "keys": [
+    "shipment_id"
+  ],
+  "grain": "one row per shipment; an order can have several",
+  "currency_policy": {
+    "mode": "none"
+  },
+  "fields": [
+    {
+      "name": "shipment_id",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "Unique shipment identifier",
+      "unit": null
+    },
+    {
+      "name": "order_id",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "Order being fulfilled",
+      "unit": null
+    },
+    {
+      "name": "carrier",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "Carrier code",
+      "unit": null
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "shipped or delivered",
+      "unit": null
+    },
+    {
+      "name": "shipped_at",
+      "type": "timestamp",
+      "required": true,
+      "nullable": false,
+      "semantic": "Dispatch time (UTC)",
+      "unit": null
+    }
+  ],
+  "semantics": {},
+  "delivery": {
+    "expected_start_min": 30,
+    "expected_progress_min": 60,
+    "hard_deadline_min": 180,
+    "grace_min": 10
+  },
+  "volume": {
+    "min_rows": 6,
+    "max_rows": 40
+  }
+}

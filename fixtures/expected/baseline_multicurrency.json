@@ -1,0 +1,53 @@
+{
+ "row_counts": {
+  "orders": 12,
+  "payments": 16,
+  "shipments": 13
+ },
+ "payments_canonical": {
+  "P-5001": "12999",
+  "P-5002": "5450",
+  "P-5003": "20000",
+  "P-5004": "11000",
+  "P-5005": "1999",
+  "P-5006": "8900",
+  "P-5007": "-8900",
+  "P-5008": "24075",
+  "P-5009": "1234",
+  "P-5010": "7520",
+  "P-5011": "41010",
+  "P-5012": "-3505",
+  "P-5013": "6600",
+  "P-5014": "10000",
+  "P-5015": "5845",
+  "P-5016": "15000"
+ },
+ "dashboards": {
+  "finance": {
+   "net_revenue_cents.USD": "84277",
+   "gross_payments_cents.USD": "93177",
+   "refunds_cents.USD": "8900",
+   "payment_count.USD": "10",
+   "net_revenue_cents.EUR": "74950",
+   "gross_payments_cents.EUR": "78455",
+   "refunds_cents.EUR": "3505",
+   "payment_count.EUR": "6"
+  },
+  "revenue": {
+   "booked_cents.USD": "93177",
+   "collected_cents.USD": "84277",
+   "outstanding_cents.USD": "8900",
+   "orders.USD": "8",
+   "booked_cents.EUR": "91378",
+   "collected_cents.EUR": "74950",
+   "outstanding_cents.EUR": "16428",
+   "orders.EUR": "4"
+  },
+  "operations": {
+   "orders": "12",
+   "orders_shipped": "11",
+   "orders_delivered": "6",
+   "orders_unshipped": "1"
+  }
+ }
+}

@@ -1,0 +1,77 @@
+{
+  "contract_version": 1,
+  "rows": [
+    {
+      "payment_id": "P-5001",
+      "order_id": "O-1001",
+      "payment_amount": 129.99,
+      "currency": "USD",
+      "kind": "payment",
+      "processor_ref": "ch_9000",
+      "paid_at": "2026-03-01T09:40:00Z"
+    },
+    {
+      "payment_id": "P-5002",
+      "order_id": "O-1002",
+      "payment_amount": 54.5,
+      "currency": "USD",
+      "kind": "payment",
+      "processor_ref": "ch_9013",
+      "paid_at": "2026-03-01T10:40:00Z"
+    },
+    {
+      "payment_id": "P-5003",
+      "order_id": "O-1003",
+      "payment_amount": 200.0,
+      "currency": "USD",
+      "kind": "payment",
+      "processor_ref": "ch_9026",
+      "paid_at": "2026-03-01T11:40:00Z"
+    },
+    {
+      "payment_id": "P-5004",
+      "order_id": "O-1003",
+      "payment_amount": 110.0,
+      "currency": "USD",
+      "kind": "payment",
+      "processor_ref": null,
+      "paid_at": "2026-03-01T12:40:00Z"
+    },
+    {
+      "payment_id": "P-5005",
+      "order_id": "O-1004",
+      "payment_amount": 19.99,
+      "currency": "USD",
+      "kind": "payment",
+      "processor_ref": "ch_9052",
+      "paid_at": "2026-03-01T13:40:00Z"
+    },
+    {
+      "payment_id": "P-5006",
+      "order_id": "O-1005",
+      "payment_amount": 89.0,
+      "currency": "USD",
+      "kind": "payment",
+      "processor_ref": "ch_9065",
+      "paid_at": "2026-03-01T14:40:00Z"
+    },
+    {
+      "payment_id": "P-5007",
+      "order_id": "O-1005",
+      "payment_amount": -89.0,
+      "currency": "USD",
+      "kind": "refund",
+      "processor_ref": "ch_9078",
+      "paid_at": "2026-03-01T15:40:00Z"
+    },
+    {
+      "payment_id": "P-5008",
+      "order_id": "O-1006",
+      "payment_amount": 240.75,
+      "currency": "USD",
+      "kind": "payment",
+      "processor_ref": "ch_9091",
+      "paid_at": "2026-03-01T16:40:00Z"
+    }
+  ]
+}

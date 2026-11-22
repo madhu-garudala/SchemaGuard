@@ -1,0 +1,89 @@
+{
+  "source": "payments",
+  "team": "payments",
+  "version": 1,
+  "owner": {
+    "team": "payments",
+    "name": "Payments Platform",
+    "contact": "#payments-data"
+  },
+  "keys": [
+    "payment_id"
+  ],
+  "grain": "one row per payment or refund; an order can have several",
+  "currency_policy": {
+    "mode": "per_row",
+    "field": "currency"
+  },
+  "fields": [
+    {
+      "name": "payment_id",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "Unique payment or refund identifier",
+      "unit": null
+    },
+    {
+      "name": "order_id",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "Order this payment settles",
+      "unit": null
+    },
+    {
+      "name": "payment_amount",
+      "type": "decimal",
+      "required": true,
+      "nullable": false,
+      "semantic": "Amount moved; refunds are negative",
+      "unit": "dollars"
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "ISO 4217 currency of the amount",
+      "unit": null
+    },
+    {
+      "name": "kind",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "semantic": "payment or refund",
+      "unit": null
+    },
+    {
+      "name": "processor_ref",
+      "type": "string",
+      "required": true,
+      "nullable": true,
+      "semantic": "Processor reference when available",
+      "unit": null
+    },
+    {
+      "name": "paid_at",
+      "type": "timestamp",
+      "required": true,
+      "nullable": false,
+      "semantic": "Settlement time (UTC)",
+      "unit": null
+    }
+  ],
+  "semantics": {
+    "refund_convention": "negative_amount"
+  },
+  "delivery": {
+    "expected_start_min": 20,
+    "expected_progress_min": 45,
+    "hard_deadline_min": 180,
+    "grace_min": 10
+  },
+  "volume": {
+    "min_rows": 8,
+    "max_rows": 40
+  }
+}
