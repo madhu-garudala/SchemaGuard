@@ -1,0 +1,30 @@
+{
+  "mapping_version": 1,
+  "source": "shipping",
+  "built_for_contract": 1,
+  "keys": [
+    "shipment_id"
+  ],
+  "fields": {
+    "shipment_id": {
+      "from": "shipment_id",
+      "as": "string"
+    },
+    "order_id": {
+      "from": "order_id",
+      "as": "string"
+    },
+    "carrier": {
+      "from": "carrier",
+      "as": "string"
+    },
+    "status": {
+      "from": "status",
+      "as": "string"
+    },
+    "shipped_at": {
+      "from": "shipped_at",
+      "as": "string"
+    }
+  }
+}

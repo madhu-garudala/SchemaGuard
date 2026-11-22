@@ -1,0 +1,38 @@
+{
+  "mapping_version": 1,
+  "source": "orders",
+  "built_for_contract": 1,
+  "keys": [
+    "order_id"
+  ],
+  "fields": {
+    "order_id": {
+      "from": "order_id",
+      "as": "string"
+    },
+    "customer_id": {
+      "from": "customer_id",
+      "as": "string"
+    },
+    "order_total_cents": {
+      "from": "order_total",
+      "as": "dollars_to_cents"
+    },
+    "currency": {
+      "from": "currency",
+      "as": "string"
+    },
+    "quantity": {
+      "from": "quantity",
+      "as": "integer"
+    },
+    "customer_region": {
+      "from": "customer_region",
+      "as": "optional_string"
+    },
+    "ordered_at": {
+      "from": "ordered_at",
+      "as": "string"
+    }
+  }
+}

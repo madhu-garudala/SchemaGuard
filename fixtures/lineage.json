@@ -1,0 +1,255 @@
+{
+ "nodes": [
+  {
+   "id": "feed.orders",
+   "kind": "feed",
+   "label": "Orders feed",
+   "owner_team": "orders"
+  },
+  {
+   "id": "feed.payments",
+   "kind": "feed",
+   "label": "Payments feed",
+   "owner_team": "payments"
+  },
+  {
+   "id": "feed.shipping",
+   "kind": "feed",
+   "label": "Shipping feed",
+   "owner_team": "shipping"
+  },
+  {
+   "id": "stg.orders",
+   "kind": "staging",
+   "label": "staging orders",
+   "owner_team": "data-platform"
+  },
+  {
+   "id": "stg.payments",
+   "kind": "staging",
+   "label": "staging payments",
+   "owner_team": "data-platform"
+  },
+  {
+   "id": "stg.shipments",
+   "kind": "staging",
+   "label": "staging shipments",
+   "owner_team": "data-platform"
+  },
+  {
+   "id": "fact.orders",
+   "kind": "fact",
+   "label": "order facts",
+   "owner_team": "data-platform"
+  },
+  {
+   "id": "fact.payments",
+   "kind": "fact",
+   "label": "payment facts",
+   "owner_team": "data-platform"
+  },
+  {
+   "id": "fact.fulfillment",
+   "kind": "fact",
+   "label": "fulfillment facts",
+   "owner_team": "data-platform"
+  },
+  {
+   "id": "dash.finance",
+   "kind": "dashboard",
+   "label": "Finance",
+   "owner_team": "finance"
+  },
+  {
+   "id": "dash.revenue",
+   "kind": "dashboard",
+   "label": "Revenue",
+   "owner_team": "revenue-analytics"
+  },
+  {
+   "id": "dash.operations",
+   "kind": "dashboard",
+   "label": "Operations",
+   "owner_team": "operations"
+  }
+ ],
+ "edges": [
+  {
+   "from": "feed.orders",
+   "to": "stg.orders",
+   "column": null,
+   "grain": "order",
+   "transform": "mappings/orders.json"
+  },
+  {
+   "from": "feed.payments",
+   "to": "stg.payments",
+   "column": null,
+   "grain": "payment",
+   "transform": "mappings/payments.json"
+  },
+  {
+   "from": "feed.shipping",
+   "to": "stg.shipments",
+   "column": null,
+   "grain": "shipment",
+   "transform": "mappings/shipping.json"
+  },
+  {
+   "from": "stg.orders",
+   "to": "fact.orders",
+   "column": "order_total_cents",
+   "grain": "order",
+   "transform": "transform.mjs#orderFacts"
+  },
+  {
+   "from": "stg.payments",
+   "to": "fact.payments",
+   "column": "amount_cents",
+   "grain": "payment",
+   "transform": "transform.mjs#paymentFacts"
+  },
+  {
+   "from": "stg.payments",
+   "to": "fact.orders",
+   "column": "amount_cents",
+   "grain": "payment -> order (many-to-one, pre-aggregated per order_id)",
+   "transform": "transform.mjs#paymentsByOrder"
+  },
+  {
+   "from": "stg.shipments",
+   "to": "fact.fulfillment",
+   "column": "status",
+   "grain": "shipment -> order (many-to-one, pre-aggregated per order_id)",
+   "transform": "transform.mjs#fulfillmentFacts"
+  },
+  {
+   "from": "fact.payments",
+   "to": "dash.finance",
+   "column": "amount_cents",
+   "grain": "payment",
+   "transform": "transform.mjs#financeDashboard"
+  },
+  {
+   "from": "fact.orders",
+   "to": "dash.revenue",
+   "column": "paid_cents",
+   "grain": "order",
+   "transform": "transform.mjs#revenueDashboard"
+  },
+  {
+   "from": "fact.orders",
+   "to": "dash.operations",
+   "column": null,
+   "grain": "order",
+   "transform": "transform.mjs#operationsDashboard"
+  },
+  {
+   "from": "fact.fulfillment",
+   "to": "dash.operations",
+   "column": "status",
+   "grain": "order",
+   "transform": "transform.mjs#operationsDashboard"
+  }
+ ],
+ "dataset_impacts": {
+  "payments": [
+   "stg.payments",
+   "fact.payments",
+   "fact.orders",
+   "dash.finance",
+   "dash.revenue"
+  ],
+  "orders": [
+   "stg.orders",
+   "fact.orders",
+   "dash.revenue",
+   "dash.operations"
+  ],
+  "shipping": [
+   "stg.shipments",
+   "fact.fulfillment",
+   "dash.operations"
+  ],
+  "warehouse": [
+   "fact.orders",
+   "fact.payments",
+   "fact.fulfillment",
+   "dash.finance",
+   "dash.revenue",
+   "dash.operations"
+  ]
+ },
+ "column_impacts": {
+  "payments.payment_amount": [
+   "stg.payments",
+   "fact.payments",
+   "fact.orders",
+   "dash.finance",
+   "dash.revenue"
+  ],
+  "payments.currency": [
+   "stg.payments",
+   "fact.payments",
+   "fact.orders",
+   "dash.finance",
+   "dash.revenue"
+  ],
+  "payments.kind": [
+   "stg.payments",
+   "fact.payments",
+   "fact.orders",
+   "dash.finance",
+   "dash.revenue"
+  ],
+  "payments.order_id": [
+   "stg.payments",
+   "fact.orders",
+   "dash.revenue"
+  ],
+  "payments.processor_ref": [],
+  "orders.order_id": [
+   "stg.orders",
+   "fact.orders",
+   "dash.revenue",
+   "dash.operations"
+  ],
+  "orders.order_total": [
+   "stg.orders",
+   "fact.orders",
+   "dash.revenue"
+  ],
+  "orders.quantity": [
+   "stg.orders",
+   "fact.orders",
+   "dash.revenue",
+   "dash.operations"
+  ],
+  "orders.customer_region": [
+   "stg.orders"
+  ],
+  "orders.currency": [
+   "stg.orders",
+   "fact.orders",
+   "dash.revenue"
+  ],
+  "shipping.shipment_id": [
+   "stg.shipments",
+   "fact.fulfillment",
+   "dash.operations"
+  ],
+  "shipping.order_id": [
+   "stg.shipments",
+   "fact.fulfillment",
+   "dash.operations"
+  ],
+  "shipping.status": [
+   "stg.shipments",
+   "fact.fulfillment",
+   "dash.operations"
+  ],
+  "shipping.carrier": [
+   "stg.shipments"
+  ]
+ }
+}

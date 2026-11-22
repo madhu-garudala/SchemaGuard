@@ -1,0 +1,35 @@
+{
+  "mapping_version": 1,
+  "source": "payments",
+  "built_for_contract": 1,
+  "keys": [
+    "payment_id"
+  ],
+  "refund_convention": "negative_amount",
+  "fields": {
+    "payment_id": {
+      "from": "payment_id",
+      "as": "string"
+    },
+    "order_id": {
+      "from": "order_id",
+      "as": "string"
+    },
+    "amount_cents": {
+      "from": "payment_amount",
+      "as": "dollars_to_cents"
+    },
+    "currency": {
+      "from": "currency",
+      "as": "string"
+    },
+    "kind": {
+      "from": "kind",
+      "as": "string"
+    },
+    "paid_at": {
+      "from": "paid_at",
+      "as": "string"
+    }
+  }
+}

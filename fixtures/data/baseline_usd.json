@@ -1,0 +1,351 @@
+{
+ "orders": [
+  {
+   "order_id": "O-1001",
+   "customer_id": "C-210",
+   "order_total": 129.99,
+   "currency": "USD",
+   "quantity": 1,
+   "customer_region": "NA",
+   "ordered_at": "2026-03-01T08:15:00Z"
+  },
+  {
+   "order_id": "O-1002",
+   "customer_id": "C-217",
+   "order_total": 54.5,
+   "currency": "USD",
+   "quantity": 2,
+   "customer_region": "EMEA",
+   "ordered_at": "2026-03-01T09:15:00Z"
+  },
+  {
+   "order_id": "O-1003",
+   "customer_id": "C-215",
+   "order_total": 310.0,
+   "currency": "USD",
+   "quantity": 4,
+   "customer_region": null,
+   "ordered_at": "2026-03-01T10:15:00Z"
+  },
+  {
+   "order_id": "O-1004",
+   "customer_id": "C-213",
+   "order_total": 19.99,
+   "currency": "USD",
+   "quantity": 1,
+   "customer_region": "NA",
+   "ordered_at": "2026-03-01T11:15:00Z"
+  },
+  {
+   "order_id": "O-1005",
+   "customer_id": "C-211",
+   "order_total": 89.0,
+   "currency": "USD",
+   "quantity": 1,
+   "customer_region": "APAC",
+   "ordered_at": "2026-03-01T12:15:00Z"
+  },
+  {
+   "order_id": "O-1006",
+   "customer_id": "C-218",
+   "order_total": 240.75,
+   "currency": "USD",
+   "quantity": 3,
+   "customer_region": "NA",
+   "ordered_at": "2026-03-01T13:15:00Z"
+  },
+  {
+   "order_id": "O-1007",
+   "customer_id": "C-216",
+   "order_total": 12.34,
+   "currency": "USD",
+   "quantity": 1,
+   "customer_region": null,
+   "ordered_at": "2026-03-01T14:15:00Z"
+  },
+  {
+   "order_id": "O-1008",
+   "customer_id": "C-214",
+   "order_total": 75.2,
+   "currency": "USD",
+   "quantity": 2,
+   "customer_region": "EMEA",
+   "ordered_at": "2026-03-01T15:15:00Z"
+  },
+  {
+   "order_id": "O-1009",
+   "customer_id": "C-212",
+   "order_total": 410.1,
+   "currency": "USD",
+   "quantity": 5,
+   "customer_region": "NA",
+   "ordered_at": "2026-03-01T16:15:00Z"
+  },
+  {
+   "order_id": "O-1010",
+   "customer_id": "C-210",
+   "order_total": 66.0,
+   "currency": "USD",
+   "quantity": 1,
+   "customer_region": "APAC",
+   "ordered_at": "2026-03-01T17:15:00Z"
+  },
+  {
+   "order_id": "O-1011",
+   "customer_id": "C-217",
+   "order_total": 158.45,
+   "currency": "USD",
+   "quantity": 2,
+   "customer_region": "EMEA",
+   "ordered_at": "2026-03-01T18:15:00Z"
+  },
+  {
+   "order_id": "O-1012",
+   "customer_id": "C-215",
+   "order_total": 279.23,
+   "currency": "USD",
+   "quantity": 3,
+   "customer_region": "NA",
+   "ordered_at": "2026-03-01T19:15:00Z"
+  }
+ ],
+ "payments": [
+  {
+   "payment_id": "P-5001",
+   "order_id": "O-1001",
+   "payment_amount": 129.99,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9000",
+   "paid_at": "2026-03-01T09:40:00Z"
+  },
+  {
+   "payment_id": "P-5002",
+   "order_id": "O-1002",
+   "payment_amount": 54.5,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9013",
+   "paid_at": "2026-03-01T10:40:00Z"
+  },
+  {
+   "payment_id": "P-5003",
+   "order_id": "O-1003",
+   "payment_amount": 200.0,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9026",
+   "paid_at": "2026-03-01T11:40:00Z"
+  },
+  {
+   "payment_id": "P-5004",
+   "order_id": "O-1003",
+   "payment_amount": 110.0,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": null,
+   "paid_at": "2026-03-01T12:40:00Z"
+  },
+  {
+   "payment_id": "P-5005",
+   "order_id": "O-1004",
+   "payment_amount": 19.99,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9052",
+   "paid_at": "2026-03-01T13:40:00Z"
+  },
+  {
+   "payment_id": "P-5006",
+   "order_id": "O-1005",
+   "payment_amount": 89.0,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9065",
+   "paid_at": "2026-03-01T14:40:00Z"
+  },
+  {
+   "payment_id": "P-5007",
+   "order_id": "O-1005",
+   "payment_amount": -89.0,
+   "currency": "USD",
+   "kind": "refund",
+   "processor_ref": "ch_9078",
+   "paid_at": "2026-03-01T15:40:00Z"
+  },
+  {
+   "payment_id": "P-5008",
+   "order_id": "O-1006",
+   "payment_amount": 240.75,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9091",
+   "paid_at": "2026-03-01T16:40:00Z"
+  },
+  {
+   "payment_id": "P-5009",
+   "order_id": "O-1007",
+   "payment_amount": 12.34,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": null,
+   "paid_at": "2026-03-01T17:40:00Z"
+  },
+  {
+   "payment_id": "P-5010",
+   "order_id": "O-1008",
+   "payment_amount": 75.2,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9117",
+   "paid_at": "2026-03-01T18:40:00Z"
+  },
+  {
+   "payment_id": "P-5011",
+   "order_id": "O-1009",
+   "payment_amount": 410.1,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9130",
+   "paid_at": "2026-03-01T19:40:00Z"
+  },
+  {
+   "payment_id": "P-5012",
+   "order_id": "O-1009",
+   "payment_amount": -35.05,
+   "currency": "USD",
+   "kind": "refund",
+   "processor_ref": "ch_9143",
+   "paid_at": "2026-03-01T20:40:00Z"
+  },
+  {
+   "payment_id": "P-5013",
+   "order_id": "O-1010",
+   "payment_amount": 66.0,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9156",
+   "paid_at": "2026-03-01T09:40:00Z"
+  },
+  {
+   "payment_id": "P-5014",
+   "order_id": "O-1011",
+   "payment_amount": 100.0,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": null,
+   "paid_at": "2026-03-01T10:40:00Z"
+  },
+  {
+   "payment_id": "P-5015",
+   "order_id": "O-1011",
+   "payment_amount": 58.45,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9182",
+   "paid_at": "2026-03-01T11:40:00Z"
+  },
+  {
+   "payment_id": "P-5016",
+   "order_id": "O-1012",
+   "payment_amount": 150.0,
+   "currency": "USD",
+   "kind": "payment",
+   "processor_ref": "ch_9195",
+   "paid_at": "2026-03-01T12:40:00Z"
+  }
+ ],
+ "shipping": [
+  {
+   "shipment_id": "S-7001",
+   "order_id": "O-1001",
+   "carrier": "UPS",
+   "status": "delivered",
+   "shipped_at": "2026-03-01T12:05:00Z"
+  },
+  {
+   "shipment_id": "S-7002",
+   "order_id": "O-1002",
+   "carrier": "DHL",
+   "status": "delivered",
+   "shipped_at": "2026-03-01T13:05:00Z"
+  },
+  {
+   "shipment_id": "S-7003",
+   "order_id": "O-1003",
+   "carrier": "FDX",
+   "status": "shipped",
+   "shipped_at": "2026-03-01T14:05:00Z"
+  },
+  {
+   "shipment_id": "S-7004",
+   "order_id": "O-1003",
+   "carrier": "UPS",
+   "status": "delivered",
+   "shipped_at": "2026-03-01T15:05:00Z"
+  },
+  {
+   "shipment_id": "S-7005",
+   "order_id": "O-1004",
+   "carrier": "DHL",
+   "status": "delivered",
+   "shipped_at": "2026-03-01T16:05:00Z"
+  },
+  {
+   "shipment_id": "S-7006",
+   "order_id": "O-1006",
+   "carrier": "FDX",
+   "status": "shipped",
+   "shipped_at": "2026-03-01T17:05:00Z"
+  },
+  {
+   "shipment_id": "S-7007",
+   "order_id": "O-1007",
+   "carrier": "UPS",
+   "status": "delivered",
+   "shipped_at": "2026-03-01T18:05:00Z"
+  },
+  {
+   "shipment_id": "S-7008",
+   "order_id": "O-1008",
+   "carrier": "DHL",
+   "status": "shipped",
+   "shipped_at": "2026-03-01T19:05:00Z"
+  },
+  {
+   "shipment_id": "S-7009",
+   "order_id": "O-1009",
+   "carrier": "FDX",
+   "status": "delivered",
+   "shipped_at": "2026-03-01T20:05:00Z"
+  },
+  {
+   "shipment_id": "S-7010",
+   "order_id": "O-1009",
+   "carrier": "UPS",
+   "status": "delivered",
+   "shipped_at": "2026-03-01T21:05:00Z"
+  },
+  {
+   "shipment_id": "S-7011",
+   "order_id": "O-1010",
+   "carrier": "DHL",
+   "status": "shipped",
+   "shipped_at": "2026-03-01T12:05:00Z"
+  },
+  {
+   "shipment_id": "S-7012",
+   "order_id": "O-1011",
+   "carrier": "FDX",
+   "status": "delivered",
+   "shipped_at": "2026-03-01T13:05:00Z"
+  },
+  {
+   "shipment_id": "S-7013",
+   "order_id": "O-1012",
+   "carrier": "UPS",
+   "status": "shipped",
+   "shipped_at": "2026-03-01T14:05:00Z"
+  }
+ ]
+}
