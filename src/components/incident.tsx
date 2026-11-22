@@ -4,10 +4,11 @@ import type { CheckResult, FindingView, IncidentView, RepairView, TimelineEntry 
 import { assetLabel, humanize, incidentLabel, incidentTone, shortSha, simClock, type Tone } from "@/lib/format";
 import { EvidenceIds, Json, Mark, Status, Time } from "./primitives";
 
+/** Titles first; each step's detail and evidence open on demand. */
 export function Timeline({ entries, linkEvidence = true }: { entries: TimelineEntry[]; linkEvidence?: boolean }) {
   if (!entries.length) return <p className="empty">Nothing recorded yet.</p>;
   return (
-    <ol className="timeline">
+    <ol className="timeline compact">
       {entries.map((e) => (
         <li key={e.key}>
           <div className="tl-time">
@@ -19,9 +20,17 @@ export function Timeline({ entries, linkEvidence = true }: { entries: TimelineEn
           </div>
           <div>
             <div className="tl-actor">{e.actor}</div>
-            <div className="tl-title">{e.title}</div>
-            {e.detail && <div className="tl-detail">{e.detail}</div>}
-            <EvidenceIds ids={e.evidence_ids} link={linkEvidence} />
+            {e.detail || e.evidence_ids.length ? (
+              <details className="tl-entry">
+                <summary>
+                  <span className="tl-title">{e.title}</span>
+                </summary>
+                {e.detail && <div className="tl-detail">{e.detail}</div>}
+                <EvidenceIds ids={e.evidence_ids} link={linkEvidence} />
+              </details>
+            ) : (
+              <div className="tl-title">{e.title}</div>
+            )}
           </div>
         </li>
       ))}
@@ -373,6 +382,28 @@ export function Incident({ incident: i, depth = "full", linkEvidence = true }: {
         </details>
       )}
     </article>
+  );
+}
+
+/** One line per alert; the full incident lives on the run page. */
+export function AlertRows({ incidents, href }: { incidents: IncidentView[]; href?: (i: IncidentView) => string }) {
+  return (
+    <ul className="rows">
+      {incidents.map((i) => (
+        <li key={i.id}>
+          <Status tone={incidentTone(i)}>{incidentLabel(i)}</Status>
+          <div className="row-main">
+            <div className="row-title">{i.title}</div>
+            <div className="row-sub">
+              {i.affected_dashboards.length ? `${i.affected_dashboards.map(assetLabel).join(", ")} · ` : ""}
+              {i.owner.name}
+              {i.has_verified_fix ? " · fix verified by replay" : ""}
+            </div>
+          </div>
+          {href ? <a href={href(i)}>Details</a> : <span />}
+        </li>
+      ))}
+    </ul>
   );
 }
 

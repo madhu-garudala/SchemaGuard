@@ -146,3 +146,22 @@ export function Loading({ what }: { what: string }) {
     </p>
   );
 }
+
+export interface TabDef {
+  id: string;
+  label: string;
+  count?: number;
+}
+
+export function Tabs({ tabs, active, onChange, label }: { tabs: TabDef[]; active: string; onChange: (id: string) => void; label: string }) {
+  return (
+    <div className="tabs" role="tablist" aria-label={label}>
+      {tabs.map((t) => (
+        <button key={t.id} type="button" role="tab" id={`tab-${t.id}`} aria-selected={active === t.id} aria-controls={`panel-${t.id}`} className="tab" onClick={() => onChange(t.id)}>
+          {t.label}
+          {t.count != null && <span className="count">{t.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}

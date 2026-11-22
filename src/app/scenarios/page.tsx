@@ -93,8 +93,7 @@ export default function ScenariosPage() {
     <>
       <h1 className="h-page">Scenarios</h1>
       <p className="lede" style={{ margin: "6px 0 20px" }}>
-        Each replay runs in its own sandbox from the same baseline snapshot and fixed clock, so results are reproducible and the main demo is left alone. The
-        expected outcome is kept in a private answer key that the investigator never sees.
+        Each replay runs in its own sandbox from the same baseline, so results are reproducible.
       </p>
       <ApiError error={error} stale={stale} />
       <WorkerOfflineNotice online={v.worker.online} seconds={v.worker.seconds_since_heartbeat} />
@@ -128,8 +127,12 @@ export default function ScenariosPage() {
                   <tr key={c.plan_id}>
                     <td className="r num muted">{c.case_no}</td>
                     <td style={{ minWidth: 240 }}>
-                      <b>{c.title}</b> {c.quick && <span className="tag" title="One of the three quickest cases to try first">Quick</span>}
-                      <div className="small muted">{c.summary}</div>
+                      <details>
+                        <summary>
+                          <b style={{ color: "var(--ink)" }}>{c.title}</b> {c.quick && <span className="tag" title="One of the three quickest cases to try first">Quick</span>}
+                        </summary>
+                        <div className="small muted" style={{ marginTop: 4 }}>{c.summary}</div>
+                      </details>
                     </td>
                     <td className="nowrap">{humanize(c.team)}</td>
                     <td>{OUTCOME_LABEL[c.expected_outcome]}</td>

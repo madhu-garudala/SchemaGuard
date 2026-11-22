@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
 import type { IncidentView, Overview, StartRunRequest, StartRunResponse } from "@/lib/api-types";
 import { HEALTH_LABEL, HEALTH_TONE, assetLabel, incidentLabel, incidentTone, isOpenIncident, shortSha } from "@/lib/format";
 import { WorkerOfflineNotice } from "@/components/chrome";
-import { Incident, Timeline } from "@/components/incident";
+import { AlertRows } from "@/components/incident";
+import { Stages } from "@/components/stages";
 import { Lineage } from "@/components/lineage";
 import { ApiError, Loading, RunModeTags, RunState, Section, Status, Time } from "@/components/primitives";
-import { RunsTable, StoryMetrics, contractsLine, financeLines } from "@/components/run-parts";
+import { RunsTable, contractsLine, financeLines } from "@/components/run-parts";
 import { api, publishWorker, usePoll, withMock } from "@/components/use-poll";
 import { formatMoney } from "@/lib/format";
 
@@ -39,7 +40,7 @@ function PublishedNow({ o }: { o: Overview }) {
       )}
       <p style={{ marginTop: 12 }} aria-live="polite">
         <Status tone={HEALTH_TONE[o.env.health]}>Current data: {HEALTH_LABEL[o.env.health]}</Status>
-        {o.env.health_detail ? <span className="muted"> — {o.env.health_detail}</span> : <span className="muted"> — the published snapshot passed every deterministic check</span>}
+        {o.env.health !== "healthy" && <span className="muted"> — the last verified snapshot stays published</span>}
       </p>
       {s && (
         <dl className="kv">
@@ -75,7 +76,6 @@ function ChangeRisk({ o }: { o: Overview }) {
           <Status tone={incidentTone(focus)}>{incidentLabel(focus)}</Status>
         </p>
         <h2 className="risk-title">{focus.title}</h2>
-        <p>{focus.what_breaks}</p>
         <dl className="kv">
           <dt>Would break</dt>
           <dd>{focus.affected_dashboards.length ? focus.affected_dashboards.map(assetLabel).join(", ") : "No dashboards"}</dd>
@@ -85,8 +85,8 @@ function ChangeRisk({ o }: { o: Overview }) {
           </dd>
           <dt>Verified fix</dt>
           <dd>{focus.has_verified_fix ? <Status tone="good">Yes, replay-verified</Status> : <Status tone="neutral">Not yet</Status>}</dd>
-          <dt>Published numbers</dt>
-          <dd>{isFuture ? "Unaffected. The change is not live, and it cannot go live without passing replay." : "The last verified snapshot stays visible."}</dd>
+          <dt>Live numbers</dt>
+          <dd>{isFuture ? "Unaffected, change not live" : "Last verified snapshot kept"}</dd>
         </dl>
         {open.length > 1 && <p className="small muted" style={{ marginTop: 8 }}>{open.length - 1} more open below.</p>}
       </>
@@ -121,7 +121,7 @@ function ChangeRisk({ o }: { o: Overview }) {
           <Status tone="neutral">No upstream changes pending</Status>
         </p>
         <p className="muted" style={{ marginTop: 6, maxWidth: "46ch" }}>
-          When a source team proposes a contract change, it is compared, traced to dashboards and rehearsed here before it can affect the published numbers.
+          Proposed contract changes are rehearsed here before they can affect published numbers.
         </p>
       </>
     );
@@ -197,8 +197,7 @@ export default function OverviewPage() {
           </button>
         </div>
         <p className="hint">
-          Simulates a Payments pull request that replaces <code>payment_amount</code> (dollars) with <code>amount_cents</code> (integer cents), before it is
-          active. Each rehearsal runs in a fresh environment that starts from the baseline snapshot, so the result is reproducible.
+          Simulates Payments renaming <code>payment_amount</code> (dollars) to <code>amount_cents</code> (cents) before the change goes live.
         </p>
         <div aria-live="polite">
           {startError && <p className="t-bad" style={{ marginTop: 6 }}>Could not start the run: {startError}</p>}
@@ -206,90 +205,64 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      <div className="cols">
-        <div className="stack">
-          <Section
-            title={story ? "Latest rehearsal" : "Rehearsal"}
-            aside={
-              story && (
-                <>
-                  <Link href={withMock(`/runs/${story.run.id}`)}>Full run detail</Link>
-                </>
-              )
-            }
-          >
-            {story ? (
-              <>
-                <p style={{ marginBottom: 14 }}>
-                  <b>{story.run.title}</b>
-                  {story.run.catalog_title ? <span className="muted"> · {story.run.catalog_title}</span> : null}
-                  <br />
-                  <RunState run={story.run} /> <RunModeTags run={story.run} />
-                </p>
-                <StoryMetrics run={story} />
-                {story.error && (
-                  <div className="notice notice-bad" role="alert">
-                    {story.error}
-                  </div>
-                )}
-                <Timeline entries={story.timeline} linkEvidence={false} />
-              </>
-            ) : (
-              <p className="empty">
-                No rehearsal has run yet. The button above proposes the Payments change, has the investigator and repair agents work on it, and replays the
-                same records to prove the Finance total holds.
+      <div className="stack" style={{ marginTop: 28 }}>
+        <Section title={story ? "Latest rehearsal" : "Rehearsal"} aside={story ? <RunModeTags run={story.run} /> : undefined}>
+          {story ? (
+            <>
+              <p style={{ marginBottom: 12 }}>
+                <b>{story.run.title}</b> <RunState run={story.run} />
               </p>
-            )}
-          </Section>
+              {story.error && (
+                <div className="notice notice-bad" role="alert">
+                  {story.error}
+                </div>
+              )}
+              <Stages run={story} />
+              <Link className="more-link" href={withMock(`/runs/${story.run.id}`)}>
+                See the diagnosis, repair diff and replay checks
+              </Link>
+            </>
+          ) : (
+            <p className="empty">No rehearsal has run yet. Press the button above to start one.</p>
+          )}
+        </Section>
 
-          <Section title="Alerts" aside={o.alerts.length ? `${o.alerts.filter(isOpenIncident).length} open of ${o.alerts.length}` : undefined}>
-            {o.alerts.length ? (
-              o.alerts.map((a) => <Incident key={a.id} incident={a} depth={story && a.run_id === story.run.id ? "full" : "summary"} linkEvidence={false} />)
-            ) : (
-              <p className="empty">No alerts. An alert opens when a proposed change or an arriving batch puts a dashboard at risk.</p>
-            )}
-          </Section>
+        <div className="cols" style={{ marginTop: 36 }}>
+          <div className="stack">
+            <Section title="Lineage">
+              <Lineage lineage={o.lineage} affected={affected} resolved={focusIncident ? !isOpenIncident(focusIncident) || focusIncident.has_verified_fix : false} />
+            </Section>
 
-          <Section title="Lineage">
-            <Lineage lineage={o.lineage} affected={affected} resolved={focusIncident ? !isOpenIncident(focusIncident) || focusIncident.has_verified_fix : false} />
-          </Section>
-        </div>
+            <Section title="Alerts" aside={o.alerts.length ? `${o.alerts.filter(isOpenIncident).length} open of ${o.alerts.length}` : undefined}>
+              {o.alerts.length ? (
+                <AlertRows incidents={o.alerts.slice(0, 5)} href={(a) => withMock(`/runs/${a.run_id}`)} />
+              ) : (
+                <p className="empty">No alerts.</p>
+              )}
+            </Section>
+          </div>
 
-        <div className="stack">
-          <Section title="Source teams">
-            <ul className="sources">
-              {o.sources.map((s) => (
-                <li key={s.id}>
-                  <div className="source-head">
-                    <span className="source-name">{s.id.charAt(0).toUpperCase() + s.id.slice(1)}</span>
-                    <span className="mono muted">
-                      contract v{s.contract_version} · {s.field_count} fields
-                    </span>
-                  </div>
-                  <div className="small muted">
-                    {s.owner.name} · {s.owner.contact}
-                  </div>
-                  <div className="small">
-                    {s.last_batch ? (
-                      <>
-                        Last batch <code>{s.last_batch.batch_id}</code>, {s.last_batch.row_count} rows, {s.last_batch.status},{" "}
-                        <Time iso={s.last_batch.received_at} mode="time" />
-                      </>
-                    ) : (
-                      <span className="muted">No batch received</span>
-                    )}
-                  </div>
-                  <div className="small muted">
-                    Feeds {s.feeds_dashboards.map(assetLabel).join(", ")} · due by +{s.delivery.hard_deadline_min} min
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Section>
+          <div className="stack">
+            <Section title="Source feeds">
+              <ul className="rows">
+                {o.sources.map((s) => (
+                  <li key={s.id}>
+                    <span className="row-title">{s.id.charAt(0).toUpperCase() + s.id.slice(1)}</span>
+                    <div className="row-main">
+                      <div className="row-sub">
+                        {s.owner.name} · {s.last_batch ? `${s.last_batch.row_count} rows ${s.last_batch.status}` : "no batch yet"}
+                      </div>
+                    </div>
+                    <span className="mono muted">v{s.contract_version}</span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
 
-          <Section title="Recent runs" aside={<Link href={withMock("/scenarios")}>Scenario catalog</Link>}>
-            <RunsTable runs={o.recent_runs} />
-          </Section>
+            <Section title="Recent runs" aside={<Link href={withMock("/scenarios")}>All scenarios</Link>}>
+              <RunsTable runs={o.recent_runs.slice(0, 5)} />
+            </Section>
+          </div>
         </div>
       </div>
     </>
